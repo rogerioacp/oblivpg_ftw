@@ -11,8 +11,10 @@ create index user_email on users using hash (email);
 
 create table obl_ftw(
 	ftw_oid Oid,
-	table_oid Oid,
-	index_oid Oid
+	mirror_table_oid Oid,
+	mirror_index_oid Oid,
+	mirror_index_am Oid, # Type of index Hash, Gist, ...
+	ftw_index_oid Oid # null if the index has not been created yet.
 );
 
 select Oid from pg_class where relname = 'users';

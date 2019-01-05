@@ -1,0 +1,5 @@
+# oblivpg_fdw extension
+comment = 'foreign-data wrapper for oblivous table access'
+default_version = '1.0'
+module_pathname = '$libdir/oblivpg_fdw'
+relocatable = true
