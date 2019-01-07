@@ -27,17 +27,18 @@
 
 
 
-typedef struct FdwIndexTableStatus{
+typedef struct FdwIndexTableStatus
+{
 
 	/**
 	 * the mirror table relation Id.
 	 **/
-	Oid relMirrorId;
+	Oid			relMirrorId;
 
 	/**
 	 * The index mirror relation Id.
 	 **/
-	Oid relIndexMirrorId;
+	Oid			relIndexMirrorId;
 
 	/**
 	 *  relam is the Oid that defines the type of the index.
@@ -45,10 +46,14 @@ typedef struct FdwIndexTableStatus{
 	 *  the catalog tablepg_class.h
 	 *  This variable is used to check if it is a BTree, Hash ... and use the correct methods.
 	 */
-	Oid relam;
-	/* identifier of physical storage file. Is null if it has not been created yet.*/
-	Oid relfilenode;
-}FdwIndexTableStatus;
+	Oid			relam;
+
+	/*
+	 * identifier of physical storage file. Is null if it has not been created
+	 * yet.
+	 */
+	Oid			relfilenode;
+} FdwIndexTableStatus;
 
 
 FdwIndexTableStatus getIndexStatus(Oid ftwOid, Oid mappingOid);

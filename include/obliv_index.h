@@ -20,7 +20,7 @@
 
 
 
-Relation obliv_index_create(FdwIndexTableStatus status);
+Relation	obliv_index_create(FdwIndexTableStatus status);
 
 
 #endif							/* OBLIV_INDEX_H */

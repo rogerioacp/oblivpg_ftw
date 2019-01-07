@@ -17,7 +17,7 @@
 #include "postgres.h"
 
 
-char* generateOblivTableName(char* tableName);
-Oid GenerateNewRelFileNode(Oid tableSpaceId, char relpersistance);
+char	   *generateOblivTableName(char *tableName);
+Oid			GenerateNewRelFileNode(Oid tableSpaceId, char relpersistance);
 
 #endif							/* OBLIV_UTILS_H */

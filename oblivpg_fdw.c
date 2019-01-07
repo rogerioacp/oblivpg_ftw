@@ -73,8 +73,8 @@ PG_MODULE_MAGIC;
 
 
 /**
- * Postgres initialization function which is called immediately after the an 
- * extension is loaded. This function can latter be used to initialize SGX 
+ * Postgres initialization function which is called immediately after the an
+ * extension is loaded. This function can latter be used to initialize SGX
  * enclaves and set-up Remote attestation.
  */
 /*void
@@ -85,7 +85,7 @@ _PG_init ()
 
 /**
  * Postgres cleaning function which is called just before an extension is
- * unloaded from a server. This function can latter be used to close SGX 
+ * unloaded from a server. This function can latter be used to close SGX
  * enclaves and clean the final context.
  */
 /*void
@@ -97,8 +97,8 @@ _PG_fini ()
 
 
 
-PG_FUNCTION_INFO_V1 (oblivpg_fdw_handler);
-PG_FUNCTION_INFO_V1 (oblivpg_fdw_validator);
+PG_FUNCTION_INFO_V1(oblivpg_fdw_handler);
+PG_FUNCTION_INFO_V1(oblivpg_fdw_validator);
 
 
 /*
@@ -106,30 +106,30 @@ PG_FUNCTION_INFO_V1 (oblivpg_fdw_validator);
  */
 
 /* Functions for scanning oblivious index and table */
-static void obliviousGetForeignRelSize (PlannerInfo * root,
-					RelOptInfo * baserel,
-					Oid foreigntableid);
+static void obliviousGetForeignRelSize(PlannerInfo * root,
+						   RelOptInfo * baserel,
+						   Oid foreigntableid);
 static void obliviousGetForeignPaths(PlannerInfo * root,
-				      RelOptInfo * baserel,
-				      Oid foreigntableid);
-static ForeignScan *obliviousGetForeignPlan(PlannerInfo * root,
-					     RelOptInfo * baserel,
-					     Oid foreigntableid,
-					     ForeignPath * best_path,
-					     List * tlist,
-					     List * scan_clauses,
-					     Plan * outer_plan);
-static void obliviousExplainForeignScan(ForeignScanState *scanState, ExplainState *explainState);
+						 RelOptInfo * baserel,
+						 Oid foreigntableid);
+static ForeignScan * obliviousGetForeignPlan(PlannerInfo * root,
+											 RelOptInfo * baserel,
+											 Oid foreigntableid,
+											 ForeignPath * best_path,
+											 List * tlist,
+											 List * scan_clauses,
+											 Plan * outer_plan);
+static void obliviousExplainForeignScan(ForeignScanState * scanState, ExplainState * explainState);
 static void obliviousBeginForeignScan(ForeignScanState * node, int eflags);
-static TupleTableSlot *obliviousIterateForeignScan(ForeignScanState * node);
+static TupleTableSlot * obliviousIterateForeignScan(ForeignScanState * node);
 static void obliviousReScanForeignScan(ForeignScanState * node);
 static void obliviousEndForeignScan(ForeignScanState * node);
 static bool obliviousAnalyzeForeignTable(Relation relation,
-					  AcquireSampleRowsFunc * func,
-					  BlockNumber * totalpages);
+							 AcquireSampleRowsFunc * func,
+							 BlockNumber * totalpages);
 static bool obliviousIsForeignScanParallelSafe(PlannerInfo * root,
-						RelOptInfo * rel,
-						RangeTblEntry * rte);
+								   RelOptInfo * rel,
+								   RangeTblEntry * rte);
 
 
 
@@ -138,39 +138,39 @@ static bool obliviousIsForeignScanParallelSafe(PlannerInfo * root,
 
 
 /**
- * Function used by postgres before issuing a table update. This function is 
- * used to initialize the necessary resources to have an oblivious heap 
+ * Function used by postgres before issuing a table update. This function is
+ * used to initialize the necessary resources to have an oblivious heap
  * and oblivious table
  */
-static void obliviousBeginForeignModify (ModifyTableState * mtstate,
-				  ResultRelInfo * rinfo, List * fdw_private,
-				  int subplan_index, int eflags);
+static void obliviousBeginForeignModify(ModifyTableState * mtstate,
+							ResultRelInfo * rinfo, List * fdw_private,
+							int subplan_index, int eflags);
 
 /*
  * Foreign-data wrapper handler function: return a structure with pointers
  * to callback routines.
  */
 Datum
-oblivpg_fdw_handler (PG_FUNCTION_ARGS)
+oblivpg_fdw_handler(PG_FUNCTION_ARGS)
 {
-  FdwRoutine *fdwroutine = makeNode (FdwRoutine);
+	FdwRoutine *fdwroutine = makeNode(FdwRoutine);
 
-  // Oblivious table scan functions
-  fdwroutine->GetForeignRelSize = obliviousGetForeignRelSize;
-  fdwroutine->GetForeignPaths = obliviousGetForeignPaths;
-  fdwroutine->GetForeignPlan = obliviousGetForeignPlan;
-  fdwroutine->ExplainForeignScan = obliviousExplainForeignScan;
-  fdwroutine->BeginForeignScan = obliviousBeginForeignScan;
-  fdwroutine->IterateForeignScan = obliviousIterateForeignScan;
-  fdwroutine->ReScanForeignScan = obliviousReScanForeignScan;
-  fdwroutine->EndForeignScan = obliviousEndForeignScan;
-  fdwroutine->AnalyzeForeignTable = obliviousAnalyzeForeignTable;
-  fdwroutine->IsForeignScanParallelSafe = obliviousIsForeignScanParallelSafe;
+	/* Oblivious table scan functions */
+	fdwroutine->GetForeignRelSize = obliviousGetForeignRelSize;
+	fdwroutine->GetForeignPaths = obliviousGetForeignPaths;
+	fdwroutine->GetForeignPlan = obliviousGetForeignPlan;
+	fdwroutine->ExplainForeignScan = obliviousExplainForeignScan;
+	fdwroutine->BeginForeignScan = obliviousBeginForeignScan;
+	fdwroutine->IterateForeignScan = obliviousIterateForeignScan;
+	fdwroutine->ReScanForeignScan = obliviousReScanForeignScan;
+	fdwroutine->EndForeignScan = obliviousEndForeignScan;
+	fdwroutine->AnalyzeForeignTable = obliviousAnalyzeForeignTable;
+	fdwroutine->IsForeignScanParallelSafe = obliviousIsForeignScanParallelSafe;
 
-  //  Oblivious insertion, update, deletion table functions
-  fdwroutine->BeginForeignModify = obliviousBeginForeignModify;
+	/* Oblivious insertion, update, deletion table functions */
+	fdwroutine->BeginForeignModify = obliviousBeginForeignModify;
 
-  PG_RETURN_POINTER (fdwroutine);
+	PG_RETURN_POINTER(fdwroutine);
 }
 
 
@@ -185,7 +185,7 @@ oblivpg_fdw_handler (PG_FUNCTION_ARGS)
 Datum
 oblivpg_fdw_validator(PG_FUNCTION_ARGS)
 {
-	//To Complete
+	/* To Complete */
 	PG_RETURN_VOID();
 }
 
@@ -197,125 +197,129 @@ oblivpg_fdw_validator(PG_FUNCTION_ARGS)
 
 
 static void
-obliviousGetForeignRelSize(PlannerInfo *root,
-					       RelOptInfo *baserel,
-					       Oid foreigntableid)
+obliviousGetForeignRelSize(PlannerInfo * root,
+						   RelOptInfo * baserel,
+						   Oid foreigntableid)
 {
 
-	//To complete
+	/* To complete */
 }
 
 static void
-obliviousGetForeignPaths(PlannerInfo *root,
-					RelOptInfo *baserel,
-					Oid foreigntableid)
+obliviousGetForeignPaths(PlannerInfo * root,
+						 RelOptInfo * baserel,
+						 Oid foreigntableid)
 {
 
-	//To complete
+	/* To complete */
 }
 
 static ForeignScan *
 obliviousGetForeignPlan(PlannerInfo * root,
-					     RelOptInfo * baserel,
-					     Oid foreigntableid,
-					     ForeignPath * best_path,
-					     List * tlist,
-					     List * scan_clauses,
-					     Plan * outer_plan)
+						RelOptInfo * baserel,
+						Oid foreigntableid,
+						ForeignPath * best_path,
+						List * tlist,
+						List * scan_clauses,
+						Plan * outer_plan)
 {
-	//To complete
+	/* To complete */
 
 	return NULL;
 }
 
-static void 
+static void
 obliviousExplainForeignScan(ForeignScanState * node,
-					 ExplainState * es)
+							ExplainState * es)
 {
-	//To complete
+	/* To complete */
 }
 
-static void 
+static void
 obliviousBeginForeignScan(ForeignScanState * node, int eflags)
 {
-	//To complete
+	/* To complete */
 }
 
 static TupleTableSlot *
 obliviousIterateForeignScan(ForeignScanState * node)
 {
-	//To complete
+	/* To complete */
 	return NULL;
 }
 
-static void 
+static void
 obliviousReScanForeignScan(ForeignScanState * node)
 {
-	//To complete
+	/* To complete */
 }
-static void 
+static void
 obliviousEndForeignScan(ForeignScanState * node)
 {
-	//To complete
+	/* To complete */
 }
-static bool 
+static bool
 obliviousAnalyzeForeignTable(Relation relation,
-					  AcquireSampleRowsFunc * func,
-					  BlockNumber * totalpages)
+							 AcquireSampleRowsFunc * func,
+							 BlockNumber * totalpages)
 {
-	//To complete
-	return false;	
+	/* To complete */
+	return false;
 }
-static bool obliviousIsForeignScanParallelSafe(PlannerInfo * root,
-						RelOptInfo * rel,
-						RangeTblEntry * rte)
+static bool
+obliviousIsForeignScanParallelSafe(PlannerInfo * root,
+								   RelOptInfo * rel,
+								   RangeTblEntry * rte)
 {
-	return  false;
+	return false;
 }
 
 
 
 static void
-obliviousBeginForeignModify (ModifyTableState * mtstate,
-			     ResultRelInfo * rinfo, List * fdw_private,
-			     int subplan_index, int eflags)
+obliviousBeginForeignModify(ModifyTableState * mtstate,
+							ResultRelInfo * rinfo, List * fdw_private,
+							int subplan_index, int eflags)
 {
-	Oid mappingOid;
+	Oid			mappingOid;
 
 
-	Relation rel = rinfo->ri_RelationDesc;
+	Relation	rel = rinfo->ri_RelationDesc;
+
 	mappingOid = get_relname_relid(OBLIV_MAPPING_TABLE_NAME, PG_CATALOG_NAMESPACE);
 	FdwIndexTableStatus iStatus;
 
-	Relation indexRelation;
+	Relation	indexRelation;
 
-	if(mappingOid != InvalidOid)
+	if (mappingOid != InvalidOid)
 	{
 		iStatus = getIndexStatus(rel->rd_id, mappingOid);
-		//Index has not been created yet.
-		if(iStatus.relfilenode == InvalidOid){
+		/* Index has not been created yet. */
+		if (iStatus.relfilenode == InvalidOid)
+		{
 
 			indexRelation = obliv_index_create(iStatus);
 
-		}else{
-			//Index has been created.
+		}
+		else
+		{
+			/* Index has been created. */
 		}
 
 	}
 	else
 	{
 		/*
-		 * The database administrator should create a Mapping table which maps the oid of the
-		 * foreign table to its mirror table counterpart. The mirror table is used by
-		 * this extension to find a matching index and simulate it.
+		 * The database administrator should create a Mapping table which maps
+		 * the oid of the foreign table to its mirror table counterpart. The
+		 * mirror table is used by this extension to find a matching index and
+		 * simulate it.
 		 *
 		 */
 		ereport(ERROR,
 				(errcode(ERRCODE_UNDEFINED_OBJECT),
-						errmsg("Mapping table %s does not exist in the database!",
-								 OBLIV_MAPPING_TABLE_NAME)));
+				 errmsg("Mapping table %s does not exist in the database!",
+						OBLIV_MAPPING_TABLE_NAME)));
 	}
 
 }
-
-

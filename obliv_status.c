@@ -29,16 +29,19 @@
 #include "utils/rel.h"
 #include "utils/snapmgr.h"
 
-FdwIndexTableStatus getIndexStatus(Oid ftwOid, Oid mappingOid){
+FdwIndexTableStatus
+getIndexStatus(Oid ftwOid, Oid mappingOid)
+{
 
-	Relation rel;
+	Relation	rel;
 	ScanKeyData skey;
-	TupleDesc tupleDesc;
+	TupleDesc	tupleDesc;
 	HeapScanDesc scan;
-	Snapshot snapshot;
-	HeapTuple tuple;
-	bool found;
-	FdwIndexTableStatus  iStatus;
+	Snapshot	snapshot;
+	HeapTuple	tuple;
+	bool		found;
+	FdwIndexTableStatus iStatus;
+
 	iStatus.relMirrorId = InvalidOid;
 	iStatus.relIndexMirrorId = InvalidOid;
 	iStatus.relam = InvalidOid;
@@ -58,10 +61,16 @@ FdwIndexTableStatus getIndexStatus(Oid ftwOid, Oid mappingOid){
 	tuple = heap_getnext(scan, ForwardScanDirection);
 	found = HeapTupleIsValid(tuple);
 
-	if(found)
+	if (found)
 	{
-		bool isMirrorTableNull, isMirrorIndexNull, isIndexAmNull, isIndexRfnNull;
-		Datum dMirrorTableId, dMirrorIndexId, dIndexAm, dIndexRfn;
+		bool		isMirrorTableNull,
+					isMirrorIndexNull,
+					isIndexAmNull,
+					isIndexRfnNull;
+		Datum		dMirrorTableId,
+					dMirrorIndexId,
+					dIndexAm,
+					dIndexRfn;
 
 		dMirrorTableId = heap_getattr(tuple, Anum_obl_mirror_table_oid, tupleDesc, &isMirrorTableNull);
 		dMirrorIndexId = heap_getattr(tuple, Anum_obl_mirror_index_oid, tupleDesc, &isMirrorIndexNull);
@@ -69,13 +78,13 @@ FdwIndexTableStatus getIndexStatus(Oid ftwOid, Oid mappingOid){
 		dIndexRfn = heap_getattr(tuple, Anum_obl_ftw_index_relfilenode, tupleDesc, &isIndexRfnNull);
 
 
-		if(!isMirrorTableNull)
+		if (!isMirrorTableNull)
 			iStatus.relMirrorId = DatumGetObjectId(dMirrorTableId);
-		if(!isMirrorIndexNull)
+		if (!isMirrorIndexNull)
 			iStatus.relIndexMirrorId = DatumGetObjectId(dMirrorIndexId);
-		if(!isIndexAmNull)
+		if (!isIndexAmNull)
 			iStatus.relam = DatumGetObjectId(dIndexAm);
-		if(!isIndexRfnNull)
+		if (!isIndexRfnNull)
 			iStatus.relfilenode = DatumGetObjectId(dIndexRfn);
 	}
 	else
