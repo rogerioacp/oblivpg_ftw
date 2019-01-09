@@ -70,35 +70,38 @@
 PG_MODULE_MAGIC;
 #endif
 
+/* Function declarations for extension loading and unloading */
 
-
+extern void _PG_init(void);
+extern void _PG_fini(void);
+PG_FUNCTION_INFO_V1(oblivpg_fdw_handler);
+PG_FUNCTION_INFO_V1(oblivpg_fdw_validator);
 /**
  * Postgres initialization function which is called immediately after the an
  * extension is loaded. This function can latter be used to initialize SGX
  * enclaves and set-up Remote attestation.
  */
-/*void
+void
 _PG_init ()
 {
-
-}*/
+	elog(DEBUG1, "In _PG_init");
+}
 
 /**
  * Postgres cleaning function which is called just before an extension is
  * unloaded from a server. This function can latter be used to close SGX
  * enclaves and clean the final context.
  */
-/*void
+void
 _PG_fini ()
 {
+	elog(DEBUG1, "In _PG_fini");
 
-}*/
+}
 
 
 
 
-PG_FUNCTION_INFO_V1(oblivpg_fdw_handler);
-PG_FUNCTION_INFO_V1(oblivpg_fdw_validator);
 
 
 /*
@@ -146,6 +149,12 @@ static void obliviousBeginForeignModify(ModifyTableState * mtstate,
 							ResultRelInfo * rinfo, List * fdw_private,
 							int subplan_index, int eflags);
 
+static TupleTableSlot *
+obliviousExecForeignInsert (EState *estate,
+                   ResultRelInfo *rinfo,
+                   TupleTableSlot *slot,
+                   TupleTableSlot *planSlot);
+
 /*
  * Foreign-data wrapper handler function: return a structure with pointers
  * to callback routines.
@@ -169,6 +178,7 @@ oblivpg_fdw_handler(PG_FUNCTION_ARGS)
 
 	/* Oblivious insertion, update, deletion table functions */
 	fdwroutine->BeginForeignModify = obliviousBeginForeignModify;
+	fdwroutine->ExecForeignInsert = obliviousExecForeignInsert;
 
 	PG_RETURN_POINTER(fdwroutine);
 }
@@ -281,6 +291,8 @@ obliviousBeginForeignModify(ModifyTableState * mtstate,
 							ResultRelInfo * rinfo, List * fdw_private,
 							int subplan_index, int eflags)
 {
+
+	elog(DEBUG1, "In obliviousBeginForeignModify");
 	Oid			mappingOid;
 
 
@@ -322,4 +334,14 @@ obliviousBeginForeignModify(ModifyTableState * mtstate,
 						OBLIV_MAPPING_TABLE_NAME)));
 	}
 
+}
+
+static TupleTableSlot *
+obliviousExecForeignInsert (EState *estate,
+                   ResultRelInfo *rinfo,
+                   TupleTableSlot *slot,
+                   TupleTableSlot *planSlot){
+
+	elog(DEBUG1, "In obliviousExecForeignInsert");
+	return NULL;
 }
