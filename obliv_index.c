@@ -47,22 +47,22 @@
 
 /* non-export function prototypes */
 
-static TupleDesc
-CustomConstructTupleDescriptor(Relation heapRelation,
-						 IndexInfo *indexInfo,
-						 List *indexColNames,
-						 Oid accessMethodObjectId,
-						 Oid *collationObjectId,
-						 Oid *classObjectId);
+static TupleDesc CustomConstructTupleDescriptor(Relation heapRelation,
+							   IndexInfo * indexInfo,
+							   List * indexColNames,
+							   Oid accessMethodObjectId,
+							   Oid * collationObjectId,
+							   Oid * classObjectId);
 
-Oid* get_index_oidvector(Oid mirrorIndex, Oid column);
-List* ConstructIndexColNames(Oid mirrorIndexOid);
-Oid get_rel_relam(Oid relid);
-TupleDesc createIndexTupleDescriptor(Relation mirrorHeapRelation, Relation mirrorIndexRelation, FdwIndexTableStatus status);
-Oid getIndexType(Oid index_oid);
+Oid		   *get_index_oidvector(Oid mirrorIndex, Oid column);
+List	   *ConstructIndexColNames(Oid mirrorIndexOid);
+Oid			get_rel_relam(Oid relid);
+TupleDesc	createIndexTupleDescriptor(Relation mirrorHeapRelation, Relation mirrorIndexRelation, FdwIndexTableStatus status);
+Oid			getIndexType(Oid index_oid);
 
 Relation
-obliv_index_create(FdwIndexTableStatus status){
+obliv_index_create(FdwIndexTableStatus status)
+{
 
 	/**
 	 * obtain an unique file Oid in the database to use as the
@@ -70,34 +70,34 @@ obliv_index_create(FdwIndexTableStatus status){
 	 *
 	 */
 
-	Relation mirrorHeapRelation;
-	Relation mirrorIndexRelation;
-	Relation result;
+	Relation	mirrorHeapRelation;
+	Relation	mirrorIndexRelation;
+	Relation	result;
 
-	Oid tableSpaceId;
-	Oid relFileNode;
-	Oid indexRelationId;
-	Oid mirrorNameSpace;
-	Oid mirrorTableSpaceId;
+	Oid			tableSpaceId;
+	Oid			relFileNode;
+	Oid			indexRelationId;
+	Oid			mirrorNameSpace;
 
-	TupleDesc tupleDescription;
+	TupleDesc	tupleDescription;
 
-	char relKind;
-	char relpersistence;
+	char		relKind;
+	char		relpersistence;
 
-	char* mirrorIndexRelationName;
-	char* oblivIndexRelationName;
+	char	   *mirrorIndexRelationName;
+	char	   *oblivIndexRelationName;
 
-	bool shared_relation;
-	bool mapped_relation;
+	bool		shared_relation;
+	bool		mapped_relation;
 
 	/*
-	 * The index table are going to be considered unlogged as it is not relevant for the prototype
-	 * to recover from crashes. This is something to think about in the future.
-	 * Furthermore, the relperstence option is irrelevant for this extension, it only modifies the
-	 * behavior of the function for temporary table which is not the case being considered.
+	 * The index table are going to be considered unlogged as it is not
+	 * relevant for the prototype to recover from crashes. This is something
+	 * to think about in the future. Furthermore, the relperstence option is
+	 * irrelevant for this extension, it only modifies the behavior of the
+	 * function for temporary table which is not the case being considered.
 	 */
-	char relpersistance = RELPERSISTENCE_UNLOGGED;
+	char		relpersistance = RELPERSISTENCE_UNLOGGED;
 
 
 	/**
@@ -112,6 +112,7 @@ obliv_index_create(FdwIndexTableStatus status){
 	tableSpaceId = GetDefaultTablespace(relpersistance);
 
 	indexRelationId = GenerateNewRelFileNode(tableSpaceId, relpersistance);
+	oelog(DEBUG1, "The Relation file node for the index is %d", indexRelationId);
 
 	/**
 	 * RelFileNode is used in corner cases on the standard postgres code to assign physical
@@ -132,7 +133,7 @@ obliv_index_create(FdwIndexTableStatus status){
 	 * https://www.postgresql.org/docs/current/storage-file-layout.html
 	 **/
 
-	 relFileNode = InvalidOid;
+	relFileNode = InvalidOid;
 
 	mirrorHeapRelation = heap_open(status.relMirrorId, AccessShareLock);
 	mirrorIndexRelation = index_open(status.relIndexMirrorId, AccessShareLock);
@@ -145,12 +146,10 @@ obliv_index_create(FdwIndexTableStatus status){
 	tupleDescription = createIndexTupleDescriptor(mirrorHeapRelation, mirrorIndexRelation, status);
 	relKind = RELKIND_INDEX;
 
-	mirrorTableSpaceId = mirrorIndexRelation->rd_rel->reltablespace;
 	relpersistence = mirrorIndexRelation->rd_rel->relpersistence;
 
 	shared_relation = mirrorIndexRelation->rd_rel->relisshared;
 	mapped_relation = RelationIsMapped(mirrorIndexRelation);
-
 
 	result = heap_create(oblivIndexRelationName,
 						 mirrorNameSpace,
@@ -164,6 +163,7 @@ obliv_index_create(FdwIndexTableStatus status){
 						 mapped_relation,
 						 false);
 
+	heap_close(result, NoLock);
 	heap_close(mirrorHeapRelation, AccessShareLock);
 	index_close(mirrorIndexRelation, AccessShareLock);
 	pfree(oblivIndexRelationName);
@@ -183,11 +183,11 @@ obliv_index_create(FdwIndexTableStatus status){
  **/
 static TupleDesc
 CustomConstructTupleDescriptor(Relation heapRelation,
-						 IndexInfo *indexInfo,
-						 List *indexColNames,
-						 Oid accessMethodObjectId,
-						 Oid *collationObjectId,
-						 Oid *classObjectId)
+							   IndexInfo * indexInfo,
+							   List * indexColNames,
+							   Oid accessMethodObjectId,
+							   Oid * collationObjectId,
+							   Oid * classObjectId)
 {
 	int			numatts = indexInfo->ii_NumIndexAttrs;
 	int			numkeyatts = indexInfo->ii_NumIndexKeyAttrs;
@@ -419,59 +419,68 @@ CustomConstructTupleDescriptor(Relation heapRelation,
  *
  * Test if returning Oids are valid.
  **/
-Oid* get_index_oidvector(Oid mirrorIndex, Oid column){
+Oid *
+get_index_oidvector(Oid mirrorIndex, Oid column)
+{
 
-	Relation rel;
+	Relation	rel;
 	ScanKeyData skey;
-	bool found;
+	bool		found;
 	SysScanDesc scanDesc;
-	HeapTuple tuple;
-	TupleDesc tupleDesc;
-	bool isOidVectorNull;
-	Datum dOidVector;
-	Oid* results = NULL;
-	Snapshot snapshot;
+	HeapTuple	tuple;
+	TupleDesc	tupleDesc;
+	bool		isOidVectorNull;
+	Datum		dOidVector;
+	Oid		   *results = NULL;
+	Snapshot	snapshot;
 
 
-	if(column != Anum_pg_index_indcollation && column != Anum_pg_index_indclass){
-			return results;
+	if (column != Anum_pg_index_indcollation && column != Anum_pg_index_indclass)
+	{
+		return results;
 	}
 
 	rel = heap_open(IndexRelationId, AccessShareLock);
 	tupleDesc = RelationGetDescr(rel);
-	ScanKeyInit(&skey, Anum_pg_index_indexrelid, BTEqualStrategyNumber, F_OIDEQ,  ObjectIdGetDatum(mirrorIndex));
+	ScanKeyInit(&skey, Anum_pg_index_indexrelid, BTEqualStrategyNumber, F_OIDEQ, ObjectIdGetDatum(mirrorIndex));
 	/**
 	 *  The pg_index catalog table has a btree index on the columns indexrelid.
 	 *  This index can be used to iterate over the column names instead of forcing a full heap scan.
 	 */
 
 	snapshot = RegisterSnapshot(GetLatestSnapshot());
-	scanDesc = systable_beginscan(rel, IndexIndrelidIndexId, true, snapshot, 1, &skey);
+	scanDesc = systable_beginscan(rel, IndexRelidIndexId, true, snapshot, 1, &skey);
 	tuple = systable_getnext(scanDesc);
 	found = HeapTupleIsValid(tuple);
-	heap_close(rel, AccessShareLock);
 
-	if(found){
+	if (found)
+	{
 		dOidVector = heap_getattr(tuple, column, tupleDesc, &isOidVectorNull);
-		if(!isOidVectorNull){
+		if (!isOidVectorNull)
+		{
 			/*
-			 * The file heap.c, function StorePartitionKey writes the opclass and collation
-			 * oids on the proper catalog table.
+			 * The file heap.c, function StorePartitionKey writes the opclass
+			 * and collation oids on the proper catalog table.
 			 *
-			 * This information seems to be accessed by the server source code when necessary.
-			 * The file gistutil.c, function gistproperty is an example on how this access can be made.
+			 * This information seems to be accessed by the server source code
+			 * when necessary. The file gistutil.c, function gistproperty is
+			 * an example on how this access can be made.
 			 *
 			 *
-			 * TODO: Review the following code to ensure that it correctly accesses the information
-			 * and if it can be optimized by  using the server internal cache. The file gistutil.c seems
-			 * to prefer to use the internal cache.
+			 * TODO: Review the following code to ensure that it correctly
+			 * accesses the information and if it can be optimized by  using
+			 * the server internal cache. The file gistutil.c seems to prefer
+			 * to use the internal cache.
 			 *
 			 */
-			oidvector* vector = (oidvector*) DatumGetPointer(dOidVector);
+			oidvector  *vector = (oidvector *) DatumGetPointer(dOidVector);
+
 			results = vector->values;
 		}
 	}
-
+	systable_endscan(scanDesc);
+	heap_close(rel, AccessShareLock);
+	UnregisterSnapshot(snapshot);
 	return results;
 }
 
@@ -497,19 +506,21 @@ Oid* get_index_oidvector(Oid mirrorIndex, Oid column){
  * It might be necessary to create Memory contexts, the code needs to be tested to be sure.
  * The file cstore_reader. has some examples that can be used to guide the creation of a memory context.
  **/
-List* ConstructIndexColNames(Oid mirrorIndexOid){
+List *
+ConstructIndexColNames(Oid mirrorIndexOid)
+{
 
-	List *result = NIL;
-	Relation rel;
+	List	   *result = NIL;
+	Relation	rel;
 	ScanKeyData skey;
 	SysScanDesc scanDesc;
-	HeapTuple tuple;
-	TupleDesc tupleDesc;
-	Snapshot snapshot;
+	HeapTuple	tuple;
+	TupleDesc	tupleDesc;
+	Snapshot	snapshot;
 
 	rel = heap_open(AttributeRelationId, AccessShareLock);
 	tupleDesc = RelationGetDescr(rel);
-	ScanKeyInit(&skey, Anum_pg_attribute_attrelid, BTEqualStrategyNumber, F_OIDEQ,  ObjectIdGetDatum(mirrorIndexOid));
+	ScanKeyInit(&skey, Anum_pg_attribute_attrelid, BTEqualStrategyNumber, F_OIDEQ, ObjectIdGetDatum(mirrorIndexOid));
 	/**
 	 *  The pg_attribute catalog table has a composed btree index on the columns attrelid, attname.
 	 *  This index can be used to iterate over the column names instead of forcing a full heap scan.
@@ -527,19 +538,21 @@ List* ConstructIndexColNames(Oid mirrorIndexOid){
 
 	scanDesc = systable_beginscan(rel, AttributeRelidNameIndexId, true, snapshot, 1, &skey);
 
-	while(HeapTupleIsValid(tuple = systable_getnext(scanDesc))){
+	while (HeapTupleIsValid(tuple = systable_getnext(scanDesc)))
+	{
 
-		bool isColumnNameNull;
-		Datum dColumnName;
+		bool		isColumnNameNull;
+		Datum		dColumnName;
 
 		dColumnName = heap_getattr(tuple, Anum_pg_attribute_attname, tupleDesc, &isColumnNameNull);
 
-		if(!isColumnNameNull)
+		if (!isColumnNameNull)
 			result = lappend(result, pstrdup(DatumGetCString(dColumnName)));
 
 	}
-
+	systable_endscan(scanDesc);
 	heap_close(rel, AccessShareLock);
+	UnregisterSnapshot(snapshot);
 	return result;
 
 }
@@ -557,7 +570,9 @@ List* ConstructIndexColNames(Oid mirrorIndexOid){
  *
  * This code must be tested to see if it works correctly.
  ***/
-Oid get_rel_relam(Oid relid){
+Oid
+get_rel_relam(Oid relid)
+{
 
 	HeapTuple	tp;
 
@@ -576,15 +591,17 @@ Oid get_rel_relam(Oid relid){
 }
 
 /*This function should do the same as get_rel_relam. Test which is is faster*/
-Oid getIndexType(Oid index_oid){
+Oid
+getIndexType(Oid index_oid)
+{
 
 	Relation	rel;
-	Oid accessMethodObjectId;
+	Oid			accessMethodObjectId;
 
 	rel = heap_open(index_oid, AccessShareLock);
-    accessMethodObjectId = rel->rd_rel->relam;
+	accessMethodObjectId = rel->rd_rel->relam;
 
-    heap_close(rel, AccessShareLock);
+	heap_close(rel, AccessShareLock);
 
 	return accessMethodObjectId;
 }
@@ -598,14 +615,16 @@ Oid getIndexType(Oid index_oid){
  * of the mirror index and table.
  *
  **/
-TupleDesc createIndexTupleDescriptor(Relation mirrorHeapRelation, Relation mirrorIndexRelation, FdwIndexTableStatus status){
+TupleDesc
+createIndexTupleDescriptor(Relation mirrorHeapRelation, Relation mirrorIndexRelation, FdwIndexTableStatus status)
+{
 
-	IndexInfo* mirrorIndexInfo;
-	List* colNamesInfo;
-	Oid accessMethodObjectId;
-	Oid* collationsIds;
-	Oid* operatorsIds;
-	TupleDesc result;
+	IndexInfo  *mirrorIndexInfo;
+	List	   *colNamesInfo;
+	Oid			accessMethodObjectId;
+	Oid		   *collationsIds;
+	Oid		   *operatorsIds;
+	TupleDesc	result;
 
 	colNamesInfo = ConstructIndexColNames(status.relIndexMirrorId);
 	accessMethodObjectId = get_rel_relam(status.relIndexMirrorId);

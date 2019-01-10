@@ -96,14 +96,69 @@ getIndexStatus(Oid ftwOid, Oid mappingOid)
 		 **/
 		ereport(ERROR,
 				(errcode(ERRCODE_UNDEFINED_OBJECT),
-				 errmsg("Index table for  oblivious foreign tables")));
+				 errmsg("No valid record found in %s", OBLIV_MAPPING_TABLE_NAME)));
 
 	}
 
-
+	/* Check if iStatus is in a consistent state. */
+	heap_endscan(scan);
 	heap_close(rel, AccessShareLock);
 	UnregisterSnapshot(snapshot);
 
 	return iStatus;
+
+}
+
+
+Ostatus
+validateIndexStatus(FdwIndexTableStatus toValidate)
+{
+
+	Ostatus		result = INVALID_STATUS;
+
+	if (toValidate.relMirrorId == InvalidOid)
+	{
+		/**
+		 * Throw error to warn user that there must be a valid Oid for the Mirror relation.
+		 **/
+		ereport(ERROR,
+				(errcode(ERRCODE_UNDEFINED_OBJECT),
+				 errmsg("Oid of mirror relation is not valid on table %s", OBLIV_MAPPING_TABLE_NAME)));
+		return result;
+	}
+
+	if (toValidate.relIndexMirrorId == InvalidOid)
+	{
+		/**
+		 * Throw error to warn user that there must be a valid Oid for the Mirror Index.
+		 **/
+		ereport(ERROR,
+				(errcode(ERRCODE_UNDEFINED_OBJECT),
+				 errmsg("Oid of mirror Index is not valid on table %s", OBLIV_MAPPING_TABLE_NAME)));
+		return result;
+	}
+
+	if (toValidate.relam == InvalidOid)
+	{
+		/**
+         * Throw error to warn user that there must be a valid index access method for the Mirror Index.
+         **/
+		ereport(ERROR,
+				(errcode(ERRCODE_UNDEFINED_OBJECT),
+				 errmsg("Oid of access method of mirror Index is not valid on table %s", OBLIV_MAPPING_TABLE_NAME)));
+		return result;
+
+	}
+
+	if (toValidate.relfilenode == InvalidOid)
+	{
+
+		return OBLIVIOUS_UNINTIALIZED;
+
+	}
+	else
+	{
+		return OBLIVIOUS_INITIALIZED;
+	}
 
 }

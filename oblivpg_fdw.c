@@ -74,6 +74,7 @@ PG_MODULE_MAGIC;
 
 extern void _PG_init(void);
 extern void _PG_fini(void);
+
 PG_FUNCTION_INFO_V1(oblivpg_fdw_handler);
 PG_FUNCTION_INFO_V1(oblivpg_fdw_validator);
 /**
@@ -82,7 +83,7 @@ PG_FUNCTION_INFO_V1(oblivpg_fdw_validator);
  * enclaves and set-up Remote attestation.
  */
 void
-_PG_init ()
+_PG_init()
 {
 	elog(DEBUG1, "In _PG_init");
 }
@@ -93,7 +94,7 @@ _PG_init ()
  * enclaves and clean the final context.
  */
 void
-_PG_fini ()
+_PG_fini()
 {
 	elog(DEBUG1, "In _PG_fini");
 
@@ -149,11 +150,10 @@ static void obliviousBeginForeignModify(ModifyTableState * mtstate,
 							ResultRelInfo * rinfo, List * fdw_private,
 							int subplan_index, int eflags);
 
-static TupleTableSlot *
-obliviousExecForeignInsert (EState *estate,
-                   ResultRelInfo *rinfo,
-                   TupleTableSlot *slot,
-                   TupleTableSlot *planSlot);
+static TupleTableSlot *obliviousExecForeignInsert(EState * estate,
+						   ResultRelInfo * rinfo,
+						   TupleTableSlot * slot,
+						   TupleTableSlot * planSlot);
 
 /*
  * Foreign-data wrapper handler function: return a structure with pointers
@@ -294,11 +294,12 @@ obliviousBeginForeignModify(ModifyTableState * mtstate,
 
 	elog(DEBUG1, "In obliviousBeginForeignModify");
 	Oid			mappingOid;
+	Ostatus		obliv_status;
 
 
 	Relation	rel = rinfo->ri_RelationDesc;
 
-	mappingOid = get_relname_relid(OBLIV_MAPPING_TABLE_NAME, PG_CATALOG_NAMESPACE);
+	mappingOid = get_relname_relid(OBLIV_MAPPING_TABLE_NAME, PG_PUBLIC_NAMESPACE);
 	FdwIndexTableStatus iStatus;
 
 	Relation	indexRelation;
@@ -306,17 +307,26 @@ obliviousBeginForeignModify(ModifyTableState * mtstate,
 	if (mappingOid != InvalidOid)
 	{
 		iStatus = getIndexStatus(rel->rd_id, mappingOid);
-		/* Index has not been created yet. */
-		if (iStatus.relfilenode == InvalidOid)
-		{
+		obliv_status = validateIndexStatus(iStatus);
 
-			indexRelation = obliv_index_create(iStatus);
+		if (obliv_status == OBLIVIOUS_UNINTIALIZED)
+		{
+			elog(DEBUG1, "Index has not been created");
+
+			/* indexRelation = obliv_index_create(iStatus); */
 
 		}
-		else
+		else if (obliv_status == OBLIVIOUS_INITIALIZED)
 		{
+			elog(DEBUG1, "Index has already been created");
 			/* Index has been created. */
 		}
+		/**
+		 *  If none of the above cases is valid, the record stored in
+		 *  OBLIV_MAPPING_TABLE_NAME is invalid and an error message
+		 *  has already been show to the user by the function
+		 *  validateIndexStatus.
+		 * */
 
 	}
 	else
@@ -337,10 +347,11 @@ obliviousBeginForeignModify(ModifyTableState * mtstate,
 }
 
 static TupleTableSlot *
-obliviousExecForeignInsert (EState *estate,
-                   ResultRelInfo *rinfo,
-                   TupleTableSlot *slot,
-                   TupleTableSlot *planSlot){
+obliviousExecForeignInsert(EState * estate,
+						   ResultRelInfo * rinfo,
+						   TupleTableSlot * slot,
+						   TupleTableSlot * planSlot)
+{
 
 	elog(DEBUG1, "In obliviousExecForeignInsert");
 	return NULL;

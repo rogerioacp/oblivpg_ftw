@@ -15,7 +15,7 @@
 
 #include "postgres.h"
 
-
+/* human-readable names for addressing columns of the obl_ftw table */
 #define Anum_obl_ftw_oid 1
 #define Anum_obl_mirror_table_oid 2
 #define Anum_obl_mirror_index_oid 3
@@ -26,6 +26,12 @@
 #define OBLIV_MAPPING_TABLE_NAME "obl_ftw"
 
 
+#define INVALID_STATUS 0
+#define OBLIVIOUS_UNINTIALIZED 1
+#define OBLIVIOUS_INITIALIZED 2
+
+
+typedef unsigned int Ostatus;
 
 typedef struct FdwIndexTableStatus
 {
@@ -58,5 +64,6 @@ typedef struct FdwIndexTableStatus
 
 FdwIndexTableStatus getIndexStatus(Oid ftwOid, Oid mappingOid);
 
+Ostatus		validateIndexStatus(FdwIndexTableStatus toValidate);
 
 #endif							/* OBLIV_STATUS_H */

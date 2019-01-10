@@ -1,0 +1,26 @@
+> lldb
+
+# Attach to process
+process attach --pid ?
+
+# After attaching the process stops for some reason, use the following command to resume
+continue
+
+#set breakpoint on a function
+
+breakpoint set --name obliviousBeginForeignModify
+
+
+
+c - continue
+
+step-in to code line -> thread step-in or just s
+step-over code line -> thread step-over or just n
+go to end of execution -> thread step-out or just f
+
+view status of current variables
+
+frame variable
+
+view status of a particular variable
+frame variable x
