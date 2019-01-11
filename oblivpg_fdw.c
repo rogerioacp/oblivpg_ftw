@@ -295,26 +295,35 @@ obliviousBeginForeignModify(ModifyTableState * mtstate,
 	elog(DEBUG1, "In obliviousBeginForeignModify");
 	Oid			mappingOid;
 	Ostatus		obliv_status;
+    MemoryContext mappingMemoryContext;
+    MemoryContext oldContext;
 
-
-	Relation	rel = rinfo->ri_RelationDesc;
-
-	mappingOid = get_relname_relid(OBLIV_MAPPING_TABLE_NAME, PG_PUBLIC_NAMESPACE);
+    Relation oblivFDWTable;
+	Relation oblivMappingRel;
+	Relation	indexRelation;
 	FdwIndexTableStatus iStatus;
 
-	Relation	indexRelation;
+    mappingMemoryContext = AllocSetContextCreate(CurrentMemoryContext, "Obliv Mapping Table",  ALLOCSET_DEFAULT_SIZES);
+    oldContext = MemoryContextSwitchTo(mappingMemoryContext);
+
+	oblivFDWTable = rinfo->ri_RelationDesc;
+
+	mappingOid = get_relname_relid(OBLIV_MAPPING_TABLE_NAME, PG_PUBLIC_NAMESPACE);
 
 	if (mappingOid != InvalidOid)
 	{
-		iStatus = getIndexStatus(rel->rd_id, mappingOid);
+		oblivMappingRel = heap_open(mappingOid, RowExclusiveLock);
+
+		iStatus = getIndexStatus(oblivFDWTable->rd_id, oblivMappingRel);
 		obliv_status = validateIndexStatus(iStatus);
 
 		if (obliv_status == OBLIVIOUS_UNINTIALIZED)
 		{
 			elog(DEBUG1, "Index has not been created");
 
-			/* indexRelation = obliv_index_create(iStatus); */
-
+			indexRelation = obliv_index_create(iStatus);
+			updateOblivIndexStatus(indexRelation, oblivFDWTable->rd_id, oblivMappingRel);
+			iStatus.relfilenode = oblivFDWTable->rd_id;
 		}
 		else if (obliv_status == OBLIVIOUS_INITIALIZED)
 		{
@@ -327,6 +336,7 @@ obliviousBeginForeignModify(ModifyTableState * mtstate,
 		 *  has already been show to the user by the function
 		 *  validateIndexStatus.
 		 * */
+        heap_close(oblivMappingRel, RowExclusiveLock);
 
 	}
 	else
@@ -343,6 +353,11 @@ obliviousBeginForeignModify(ModifyTableState * mtstate,
 				 errmsg("Mapping table %s does not exist in the database!",
 						OBLIV_MAPPING_TABLE_NAME)));
 	}
+
+	MemoryContextSwitchTo(oldContext);
+	MemoryContextDelete(mappingMemoryContext);
+    elog(DEBUG1, "closed begin foreing modify");
+
 
 }
 

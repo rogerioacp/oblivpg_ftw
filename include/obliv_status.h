@@ -14,6 +14,7 @@
 #define OBLIV_STATUS_H
 
 #include "postgres.h"
+#include "utils/relcache.h"
 
 /* human-readable names for addressing columns of the obl_ftw table */
 #define Anum_obl_ftw_oid 1
@@ -22,6 +23,7 @@
 #define Anum_obl_mirror_index_am 4
 #define Anum_obl_ftw_index_relfilenode 5
 
+#define Natts_obliv_mapping 5
 
 #define OBLIV_MAPPING_TABLE_NAME "obl_ftw"
 
@@ -62,8 +64,18 @@ typedef struct FdwIndexTableStatus
 } FdwIndexTableStatus;
 
 
-FdwIndexTableStatus getIndexStatus(Oid ftwOid, Oid mappingOid);
+typedef struct OblivWriteState
+{
+
+	FdwIndexTableStatus indexedTableStatus;
+	MemoryContext writeContext;
+
+}			OblivWriteState;
+
+FdwIndexTableStatus getIndexStatus(Oid ftwOid, Relation mappingOid);
 
 Ostatus		validateIndexStatus(FdwIndexTableStatus toValidate);
+
+void		updateOblivIndexStatus(Relation oblivIndexRelation, Oid ftwOid, Relation mappingRel);
 
 #endif							/* OBLIV_STATUS_H */

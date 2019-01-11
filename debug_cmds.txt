@@ -24,3 +24,7 @@ frame variable
 
 view status of a particular variable
 frame variable x
+
+
+(lldb) p (char*) list_head(colNamesInfo)->data.ptr_value
+(char *) $3 = 0x0000000106e35484 "email"

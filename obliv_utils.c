@@ -26,6 +26,7 @@
 #include "catalog/pg_class_d.h"
 #include "storage/lockdefs.h"
 
+/* The table name needs to be freed once it is not used. */
 char *
 generateOblivTableName(char *tableName)
 {

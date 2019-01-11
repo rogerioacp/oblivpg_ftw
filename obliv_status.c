@@ -18,6 +18,7 @@
 
 #include "include/obliv_status.h"
 
+#include "c.h"
 #include "access/heapam.h"
 #include "access/skey.h"
 #include "access/stratnum.h"
@@ -30,10 +31,9 @@
 #include "utils/snapmgr.h"
 
 FdwIndexTableStatus
-getIndexStatus(Oid ftwOid, Oid mappingOid)
+getIndexStatus(Oid ftwOid, Relation rel)
 {
 
-	Relation	rel;
 	ScanKeyData skey;
 	TupleDesc	tupleDesc;
 	HeapScanDesc scan;
@@ -47,13 +47,11 @@ getIndexStatus(Oid ftwOid, Oid mappingOid)
 	iStatus.relam = InvalidOid;
 	iStatus.relfilenode = InvalidOid;
 
-	rel = heap_open(mappingOid, AccessShareLock);
 	tupleDesc = RelationGetDescr(rel);
 
 	ScanKeyInit(&skey,
 				Anum_obl_ftw_oid,
 				InvalidStrategy, F_OIDEQ, ObjectIdGetDatum(ftwOid));
-
 	snapshot = RegisterSnapshot(GetLatestSnapshot());
 	scan = heap_beginscan(rel, snapshot, 1, &skey);
 
@@ -90,9 +88,7 @@ getIndexStatus(Oid ftwOid, Oid mappingOid)
 	else
 	{
 		/**
-		 * Throw error to warn user that there must be a table to store the index.
-		 * Or we can assume that there are no indexes.
-		 * In the current implementation we simply warn the user.
+		 * Throw error to warn user that there must be a valid tuple with information about the oblivous foreign table.
 		 **/
 		ereport(ERROR,
 				(errcode(ERRCODE_UNDEFINED_OBJECT),
@@ -102,7 +98,6 @@ getIndexStatus(Oid ftwOid, Oid mappingOid)
 
 	/* Check if iStatus is in a consistent state. */
 	heap_endscan(scan);
-	heap_close(rel, AccessShareLock);
 	UnregisterSnapshot(snapshot);
 
 	return iStatus;
@@ -161,4 +156,59 @@ validateIndexStatus(FdwIndexTableStatus toValidate)
 		return OBLIVIOUS_INITIALIZED;
 	}
 
+}
+
+void updateOblivIndexStatus(Relation oblivIndexRelation, Oid ftwOid, Relation mappingRel){
+
+	ScanKeyData skey;
+	TupleDesc	tupleDesc;
+	HeapScanDesc scan;
+	Snapshot	snapshot;
+	HeapTuple	oldTuple;
+	HeapTuple   newTuple;
+	bool		found;
+	Datum		new_record[Natts_obliv_mapping];
+	bool		new_record_nulls[Natts_obliv_mapping];
+	bool		new_record_repl[Natts_obliv_mapping];
+
+	tupleDesc = RelationGetDescr(mappingRel);
+
+	ScanKeyInit(&skey,
+				Anum_obl_ftw_oid,
+				InvalidStrategy, F_OIDEQ, ObjectIdGetDatum(ftwOid));
+	snapshot = RegisterSnapshot(GetLatestSnapshot());
+	scan = heap_beginscan(mappingRel, snapshot, 1, &skey);
+
+	/* There can be at most one matching row */
+	oldTuple = heap_getnext(scan, ForwardScanDirection);
+	found = HeapTupleIsValid(oldTuple);
+
+	if (found)
+	{
+
+		MemSet(new_record, 0, sizeof(new_record));
+		MemSet(new_record_nulls, false, sizeof(new_record_nulls));
+		MemSet(new_record_repl, false, sizeof(new_record_repl));
+		new_record[Anum_obl_ftw_index_relfilenode-1] = ObjectIdGetDatum(oblivIndexRelation->rd_id);
+		new_record_repl[Anum_obl_ftw_index_relfilenode-1] = true;
+
+		newTuple = heap_modify_tuple(oldTuple, RelationGetDescr(mappingRel),
+					new_record, new_record_nulls, new_record_repl);
+
+		simple_heap_update(mappingRel, &oldTuple->t_self,newTuple);
+	}else{
+		/**
+		 *  Something went really wrong, somehow the tuple that existed in the first scan on the function getIndexStatus
+		 *  dissapearded. This function has a pointer to the same relation that was used on the function getIndexStatus
+		 *  and the relation should have  a RowExclusiveLock.
+		 **/
+		ereport(ERROR,
+				(errcode(ERRCODE_UNDEFINED_OBJECT),
+						errmsg(" updateOblivIndexStatus can not find the valid record on the table %s", OBLIV_MAPPING_TABLE_NAME)));
+
+	}
+
+	/* Check if iStatus is in a consistent state. */
+	heap_endscan(scan);
+	UnregisterSnapshot(snapshot);
 }

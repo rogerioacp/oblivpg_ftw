@@ -48,11 +48,11 @@
 /* non-export function prototypes */
 
 static TupleDesc CustomConstructTupleDescriptor(Relation heapRelation,
-							   IndexInfo * indexInfo,
-							   List * indexColNames,
-							   Oid accessMethodObjectId,
-							   Oid * collationObjectId,
-							   Oid * classObjectId);
+												IndexInfo * indexInfo,
+												List * indexColNames,
+												Oid accessMethodObjectId,
+												Oid * collationObjectId,
+												Oid * classObjectId);
 
 Oid		   *get_index_oidvector(Oid mirrorIndex, Oid column);
 List	   *ConstructIndexColNames(Oid mirrorIndexOid);
@@ -112,7 +112,11 @@ obliv_index_create(FdwIndexTableStatus status)
 	tableSpaceId = GetDefaultTablespace(relpersistance);
 
 	indexRelationId = GenerateNewRelFileNode(tableSpaceId, relpersistance);
-	oelog(DEBUG1, "The Relation file node for the index is %d", indexRelationId);
+
+	/*
+	 * elog(DEBUG1, "The Relation file node for the index is %d",
+	 * indexRelationId);
+	 */
 
 	/**
 	 * RelFileNode is used in corner cases on the standard postgres code to assign physical
@@ -138,6 +142,10 @@ obliv_index_create(FdwIndexTableStatus status)
 	mirrorHeapRelation = heap_open(status.relMirrorId, AccessShareLock);
 	mirrorIndexRelation = index_open(status.relIndexMirrorId, AccessShareLock);
 
+	/***
+	 * get_rel_name uses pstrdup which allocates memmory with palloc that should be freed with pfree.
+	 * If not explicitly freed, the memory context should do it.
+	 * */
 	mirrorIndexRelationName = get_rel_name(status.relIndexMirrorId);
 	oblivIndexRelationName = generateOblivTableName(mirrorIndexRelationName);
 
@@ -163,10 +171,13 @@ obliv_index_create(FdwIndexTableStatus status)
 						 mapped_relation,
 						 false);
 
+
 	heap_close(result, NoLock);
 	heap_close(mirrorHeapRelation, AccessShareLock);
 	index_close(mirrorIndexRelation, AccessShareLock);
 	pfree(oblivIndexRelationName);
+	pfree(mirrorIndexRelationName);
+	pfree(tupleDescription);
 
 	return result;
 }
@@ -547,6 +558,11 @@ ConstructIndexColNames(Oid mirrorIndexOid)
 		dColumnName = heap_getattr(tuple, Anum_pg_attribute_attname, tupleDesc, &isColumnNameNull);
 
 		if (!isColumnNameNull)
+
+			/*
+			 * Must be explicitly freed with pfree or is implicitly freed with
+			 * the memory context.
+			 */
 			result = lappend(result, pstrdup(DatumGetCString(dColumnName)));
 
 	}
@@ -636,7 +652,7 @@ createIndexTupleDescriptor(Relation mirrorHeapRelation, Relation mirrorIndexRela
 	result = CustomConstructTupleDescriptor(mirrorHeapRelation, mirrorIndexInfo, colNamesInfo, accessMethodObjectId, collationsIds, operatorsIds);
 
 	list_free_deep(colNamesInfo);
-
+	pfree(mirrorIndexInfo);
 	return result;
 
 }
