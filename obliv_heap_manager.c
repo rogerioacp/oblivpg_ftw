@@ -1,7 +1,7 @@
 /*-------------------------------------------------------------------------
  *
- * obliv_index.c
- *	  code to create Oblivious POSTGRES index relations
+ * obliv_heap.c
+ *	  code to create Oblivious heap files for relations and indexes
  *
  *  Copyright (c) 2018-2019, HASLab
  *
@@ -18,7 +18,7 @@
 
 
 
-#include "include/obliv_index.h"
+#include "include/obliv_heap_manager.h"
 #include "include/obliv_utils.h"
 
 #include "access/amapi.h"
@@ -54,20 +54,150 @@ static TupleDesc CustomConstructTupleDescriptor(Relation heapRelation,
 												Oid * collationObjectId,
 												Oid * classObjectId);
 
+static void createHeapTupleDescriptor(FdwOblivTableStatus status);
+
 Oid		   *get_index_oidvector(Oid mirrorIndex, Oid column);
 List	   *ConstructIndexColNames(Oid mirrorIndexOid);
 Oid			get_rel_relam(Oid relid);
-TupleDesc	createIndexTupleDescriptor(Relation mirrorHeapRelation, Relation mirrorIndexRelation, FdwIndexTableStatus status);
-Oid			getIndexType(Oid index_oid);
+TupleDesc	createIndexTupleDescriptor(Relation mirrorHeapRelation, Relation mirrorIndexRelation, FdwOblivTableStatus status);
+
 
 Relation
-obliv_index_create(FdwIndexTableStatus status)
+obliv_table_create(FdwOblivTableStatus status){
+	Relation	result;
+
+
+	/**
+	 * Use the Oid of the oblivFDWTable relation to create a heap file.
+	 */
+
+	Oid			tableSpaceId;
+	Oid			relFileNode;
+	Oid			relationId;
+	Oid			nameSpace;
+
+	TupleDesc	tupleDesc;
+
+	char		relKind;
+	char		relpersistence;
+
+	char 	   *relationName;
+	char 	   *oblivTableRelationName;
+
+	bool		shared_relation;
+	bool		mapped_relation;
+	Relation 	mirrorHeapRelation;
+	Relation    pg_class;
+
+    pg_class = heap_open(RelationRelationId, RowExclusiveLock);
+
+
+
+    /*
+     * The heap tables are going to be considered unlogged as it is not
+     * relevant for the prototype to recover from crashes. This is something
+     * to think about in the future. Furthermore, the relperstence option is
+     * irrelevant for this extension, it only modifies the behavior of the
+     * function for temporary table which is not the case being considered.
+     */
+	relpersistence = RELPERSISTENCE_UNLOGGED;
+
+
+	/**
+	 * Tables can be stored in different directories or disk partitions to either increase the
+	 * database size or take advantage of faster (RAMDisks) or slower disks. For now, oblivious
+	 * tables and indexes are stored on the default table space, but can latter be changed to
+	 * something user-defined.
+	 **/
+	tableSpaceId = GetDefaultTablespace(relpersistence);
+
+	/**
+	 * The oid of FDW table can be used to create a heap file but it will lead to unecessary memory leaks
+	 * and cache swaps because the relation cahche (relcache) maintains a cache which is an hash table from
+	 * relation oid to object reference. Thus, when a new relation is created with the same oid it will replace the
+	 * previous FDW reference. To avoid this problem, we generate a new relfile node and update the obliv status table.
+	 **/
+	relationId = GenerateNewRelFileNode(tableSpaceId, relpersistence);
+
+
+	/**
+	 * RelFileNode is used in corner cases on the standard postgres code to assign physical
+	 * storage Oid different from the relation  Oid. This happens when a user wants to move a table
+	 * for instance. Thus, for the default case, it can be left unspecified.
+	 **/
+
+	relFileNode = InvalidOid;
+
+	mirrorHeapRelation = heap_open(status.relTableMirrorId, AccessShareLock);
+
+
+	relationName =  RelationGetRelationName(mirrorHeapRelation);
+	oblivTableRelationName = generateOblivTableName(relationName);
+
+	nameSpace = RelationGetNamespace(mirrorHeapRelation);
+
+	tupleDesc = mirrorHeapRelation->rd_att;
+    createHeapTupleDescriptor(status);
+
+	relKind = RELKIND_RELATION;
+
+	/**
+	 * True if this table is shared across all databases in the cluster.
+	 * Only certain system catalogs (such as pg_database) are shared.
+	 * */
+	shared_relation = false;
+
+	/*
+	 * For most tables, the physical file underlying the table is specified by
+	 * pg_class.relfilenode.  However, that obviously won't work for pg_class
+	 * itself, nor for the other "nailed" catalogs for which we have to be able
+	 * to set up working Relation entries without access to pg_class.
+	 **/
+	mapped_relation = false;
+
+	elog(DEBUG1, "going to create heap");
+	result = heap_create(oblivTableRelationName,
+						 nameSpace,
+						 tableSpaceId,
+						 relationId,
+						 relFileNode,
+						 tupleDesc,
+						 relKind,
+						 relpersistence,
+						 shared_relation,
+						 mapped_relation,
+						 false);
+
+	elog(DEBUG1, "inserting tuple on pgclass");
+
+    /*
+     * store index's pg_class entry
+     */
+    InsertPgClassTuple(pg_class, result,
+                       RelationGetRelid(result),
+                       (Datum) 0,
+					   (Datum) 0);
+
+    /* done with pg_class */
+    heap_close(pg_class, RowExclusiveLock);
+
+
+	heap_close(result, NoLock);
+	heap_close(mirrorHeapRelation,AccessShareLock);
+	pfree(relationName);
+	pfree(oblivTableRelationName);
+
+	return result;
+}
+
+
+Relation
+obliv_index_create(FdwOblivTableStatus status)
 {
 
 	/**
 	 * obtain an unique file Oid in the database to use as the
 	 * name and pointer of the physical index file.
-	 *
 	 */
 
 	Relation	mirrorHeapRelation;
@@ -91,13 +221,13 @@ obliv_index_create(FdwIndexTableStatus status)
 	bool		mapped_relation;
 
 	/*
-	 * The index table are going to be considered unlogged as it is not
+	 * The index tables are going to be considered unlogged as it is not
 	 * relevant for the prototype to recover from crashes. This is something
 	 * to think about in the future. Furthermore, the relperstence option is
 	 * irrelevant for this extension, it only modifies the behavior of the
 	 * function for temporary table which is not the case being considered.
 	 */
-	char		relpersistance = RELPERSISTENCE_UNLOGGED;
+	relpersistence = RELPERSISTENCE_UNLOGGED;
 
 
 	/**
@@ -109,9 +239,9 @@ obliv_index_create(FdwIndexTableStatus status)
 	 * The relation persistence is a necessary argument, but is only relevant for temporary tables.
 	 *
 	 **/
-	tableSpaceId = GetDefaultTablespace(relpersistance);
+	tableSpaceId = GetDefaultTablespace(relpersistence);
 
-	indexRelationId = GenerateNewRelFileNode(tableSpaceId, relpersistance);
+	indexRelationId = GenerateNewRelFileNode(tableSpaceId, relpersistence);
 
 	/*
 	 * elog(DEBUG1, "The Relation file node for the index is %d",
@@ -125,10 +255,10 @@ obliv_index_create(FdwIndexTableStatus status)
 	 *
 	 * This parameter has nothing to do with the tables forks or segments.
 	 *
-	 * Forks are the names given to additional files that store metadata of a relation.
+	 * Forks are the names given to additional files that store metadata of a relation (e.g.: Free space map, visibility map).
 	 * Segments are the division of a relation in multiple files of 1GB each.
 	 *
-	 * Both of this cases are handled internally by the postgres storage manager.
+	 * Both of these cases are handled internally by the postgres storage manager.
 	 * On the file md.c there are several places where these concepts are used.
 	 * In particular, the internal function _mdfd_getseg handles the creation and access of
 	 * a relation segments.
@@ -139,7 +269,7 @@ obliv_index_create(FdwIndexTableStatus status)
 
 	relFileNode = InvalidOid;
 
-	mirrorHeapRelation = heap_open(status.relMirrorId, AccessShareLock);
+	mirrorHeapRelation = heap_open(status.relTableMirrorId, AccessShareLock);
 	mirrorIndexRelation = index_open(status.relIndexMirrorId, AccessShareLock);
 
 	/***
@@ -151,10 +281,8 @@ obliv_index_create(FdwIndexTableStatus status)
 
 
 	mirrorNameSpace = RelationGetNamespace(mirrorIndexRelation);
-	tupleDescription = createIndexTupleDescriptor(mirrorHeapRelation, mirrorIndexRelation, status);
+	createIndexTupleDescriptor(mirrorHeapRelation, mirrorIndexRelation, status);
 	relKind = RELKIND_INDEX;
-
-	relpersistence = mirrorIndexRelation->rd_rel->relpersistence;
 
 	shared_relation = mirrorIndexRelation->rd_rel->relisshared;
 	mapped_relation = RelationIsMapped(mirrorIndexRelation);
@@ -606,21 +734,7 @@ get_rel_relam(Oid relid)
 		return InvalidOid;
 }
 
-/*This function should do the same as get_rel_relam. Test which is is faster*/
-Oid
-getIndexType(Oid index_oid)
-{
 
-	Relation	rel;
-	Oid			accessMethodObjectId;
-
-	rel = heap_open(index_oid, AccessShareLock);
-	accessMethodObjectId = rel->rd_rel->relam;
-
-	heap_close(rel, AccessShareLock);
-
-	return accessMethodObjectId;
-}
 
 
 /**
@@ -632,7 +746,7 @@ getIndexType(Oid index_oid)
  *
  **/
 TupleDesc
-createIndexTupleDescriptor(Relation mirrorHeapRelation, Relation mirrorIndexRelation, FdwIndexTableStatus status)
+createIndexTupleDescriptor(Relation mirrorHeapRelation, Relation mirrorIndexRelation, FdwOblivTableStatus status)
 {
 
 	IndexInfo  *mirrorIndexInfo;
@@ -655,4 +769,61 @@ createIndexTupleDescriptor(Relation mirrorHeapRelation, Relation mirrorIndexRela
 	pfree(mirrorIndexInfo);
 	return result;
 
+}
+
+
+void createHeapTupleDescriptor(FdwOblivTableStatus status){
+    ScanKeyData skey;
+    Snapshot	snapshot;
+    HeapScanDesc scan;
+    HeapTuple   oldTuple;
+    HeapTuple   newTuple;
+    Relation rel;
+    TupleDesc	tupleDesc;
+
+    List	   *result = NIL;
+
+    rel = heap_open(AttributeRelationId, RowExclusiveLock);
+    ScanKeyInit(&skey, Anum_pg_attribute_attrelid, InvalidStrategy, F_OIDEQ, ObjectIdGetDatum(status.relTableMirrorId));
+
+    snapshot = RegisterSnapshot(GetLatestSnapshot());
+    scan = heap_beginscan(rel, snapshot, 1, &skey);
+
+    tupleDesc = RelationGetDescr(rel);
+    int index;
+
+    do{
+        oldTuple = heap_getnext(scan, ForwardScanDirection);
+
+        Datum		values[Natts_pg_attribute];
+        bool		isnull[Natts_pg_attribute];
+
+        MemSet(values, 0, sizeof(values));
+        MemSet(isnull, false, sizeof(isnull));
+
+        values[Anum_pg_attribute_attrelid-1] = DatumGetObjectId(status.heapTableRelFileNode);
+        isnull[Anum_pg_attribute_attrelid-1] = false;
+
+        for(index=1; index < Natts_pg_attribute; index++){
+            elog(DEBUG1, "on tuple index %d", index);
+            values[index] = heap_getattr(oldTuple, index, tupleDesc, &isnull[index]);
+        }
+
+        newTuple = heap_form_tuple(tupleDesc, values, isnull);
+        lappend(result, newTuple);
+
+    }while(HeapTupleIsValid(oldTuple));
+
+    ListCell   *tupleCell;
+
+    foreach(tupleCell, result)
+    {
+        HeapTuple *tuple = lfirst_node(HeapTuple, tupleCell);
+        CatalogTupleInsert(rel, *tuple);
+
+    }
+    heap_close(rel, RowExclusiveLock);
+
+
+    list_free_deep(result);
 }

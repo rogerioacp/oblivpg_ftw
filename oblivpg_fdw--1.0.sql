@@ -16,3 +16,9 @@ LANGUAGE C STRICT;
 CREATE FOREIGN DATA WRAPPER oblivpg_fdw
   HANDLER oblivpg_fdw_handler
   VALIDATOR oblivpg_fdw_validator;
+
+
+
+drop server obliv;
+DROP EXTENSION oblivpg_fdw CASCADE;
+DROP FOREIGN TABLE obliv_users;

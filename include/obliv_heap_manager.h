@@ -1,6 +1,6 @@
 /*-------------------------------------------------------------------------
  *
- * index.h
+ * obliv_index.h
  *	  prototypes for contrib/oblivpg_fdw/index.c.
  *
  *
@@ -19,8 +19,8 @@
 #include "utils/relcache.h"
 
 
-
-Relation	obliv_index_create(FdwIndexTableStatus status);
+Relation    obliv_table_create(FdwOblivTableStatus status);
+Relation	obliv_index_create(FdwOblivTableStatus status);
 
 
 #endif							/* OBLIV_INDEX_H */

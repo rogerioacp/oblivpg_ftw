@@ -1,6 +1,6 @@
 /*-------------------------------------------------------------------------
  *
- * index.h
+ * obliv_utils.h
  *	  prototypes for contrib/oblivpg_fdw/obliv_utils.c.
  *
  *
@@ -15,9 +15,9 @@
 
 
 #include "postgres.h"
+#include "access/heapam.h"
 
-
-char	   *generateOblivTableName(char *tableName);
+char        *generateOblivTableName(char *tableName);
 Oid			GenerateNewRelFileNode(Oid tableSpaceId, char relpersistance);
-
+HeapTuple   heap_prepare_insert(Relation relation, HeapTuple tup, TransactionId xid, CommandId cid, int options);
 #endif							/* OBLIV_UTILS_H */

@@ -10,18 +10,21 @@ create table users(
 create index user_email on users using hash (email);
 
 create table obl_ftw(
-	ftw_oid Oid,
+	ftw_table_oid Oid,
 	mirror_table_oid Oid,
 	mirror_index_oid Oid,
 	mirror_index_am Oid,
-	ftw_index_oid Oid
+	ftw_table_nblocks integer,
+	ftw_index_nblocks integer,
+	ftw_heap_table_oid Oid,
+	ftw_index_oid Oid,
+	init 	boolean
 );
 
 CREATE EXTENSION oblivpg_fdw;
 CREATE SERVER obliv FOREIGN DATA WRAPPER oblivpg_fdw;
-CREATE FOREIGN DATA WRAPPER oblivpg_fdw
-    OPTIONS (debug 'true');
-CREATE FOREIGN TABLE obliv_users(
+CREATE FOREIGN DATA WRAPPER oblivpg_fdw OPTIONS (debug 'true');
+CREATE FOREIGN TABLE ftw_users(
 	id integer,
 	name varchar(50),
 	age integer,
@@ -37,7 +40,7 @@ INSERT INTO obliv_users (id, name, age, gender, email) values (1, 'teste', 20, 1
 select pg_backend_pid();
 
 #get oid of foreign table 
-select Oid from pg_class where relname  = 'obliv_users';
+select Oid from pg_class where relname  = 'ftw_users';
 
 select Oid from pg_class where relname = 'users';
 
@@ -49,12 +52,16 @@ select relam from pg_class where oid = ?;
 # generate debug symbols without optimization
 make CFLAGS='-Wall -Wmissing-prototypes -Wpointer-arith -Wdeclaration-after-statement -Wendif-labels -Wmissing-format-attribute -Wformat-security -fno-strict-aliasing -fwrapv -Wno-unused-command-line-argument -g -O0'
 
-# indrelid is the oid of the table that is indexed.
-# The OID of the pg_class entry for the table this index is for
-select * from pg_index where indrelid = ?;
+
+insert into obl_ftw (ftw_table_oid, mirror_table_oid, mirror_index_oid, mirror_index_am, ftw_table_nblocks, ftw_index_nblocks, ftw_heap_table_oid, ftw_index_oid, init) values(16401, 16385,   16388, 405, 100, 100, NULL, NULL, false);
 
 
-insert into obl_ftw (ftw_oid, mirror_table_oid, mirror_index_oid, mirror_index_am, ftw_index_oid) values(?, ?, ?, ?, Null);
+CREATE FUNCTION setup_obliv_tables(int4) RETURNS int4
+    AS 'oblivpg_fdw', 'setup_obliv_tables'
+    LANGUAGE C STRICT;
 
+CREATE FUNCTION init_soe(int4) RETURNS int4
+    AS 'oblivpg_fdw', 'init_soe'
+    LANGUAGE C STRICT;
 
-insert into obl_ftw (ftw_oid, mirror_table_oid, mirror_index_oid, mirror_index_am, ftw_index_oid) values(16406, 16409, 16412, 405, Null);
+select setup_obliv_tables(16401);
