@@ -15,7 +15,7 @@
 #include <string.h>
 
 #include "include/obliv_status.h"
-#include "include/obliv_heap_manager.h"
+//#include "include/obliv_heap_manager.h"
 #include "include/obliv_soe.h"
 #include "include/obliv_utils.h"
 #include "include/oblivpg_fdw.h"
@@ -81,6 +81,10 @@
 PG_MODULE_MAGIC;
 #endif
 
+PG_FUNCTION_INFO_V1(oblivpg_fdw_handler);
+PG_FUNCTION_INFO_V1(oblivpg_fdw_validator);
+
+
 /* Function declarations for extension loading and unloading */
 
 extern void _PG_init(void);
@@ -88,10 +92,8 @@ extern void _PG_fini(void);
 
 
 
-PG_FUNCTION_INFO_V1(oblivpg_fdw_handler);
-PG_FUNCTION_INFO_V1(oblivpg_fdw_validator);
-PG_FUNCTION_INFO_V1(setup_obliv_tables);
-PG_FUNCTION_INFO_V1(init_soe);
+
+//PG_FUNCTION_INFO_V1(init_soe);
 
 
 
@@ -162,82 +164,9 @@ static bool obliviousIsForeignScanParallelSafe(PlannerInfo * root,
 								   RangeTblEntry * rte);
 
 
-Datum setup_obliv_tables(PG_FUNCTION_ARGS)
-{
-    Oid fdwTableOid = PG_GETARG_OID(0);
+void init_soe(Oid oid){
 
-    Oid			mappingOid;
-    Ostatus		obliv_status;
-    MemoryContext mappingMemoryContext;
-    MemoryContext oldContext;
-    Relation oblivMappingRel;
-
-    //underlying heap files
-    Relation    heapTableRelation;
-    Relation	indexRelation;
-    FdwOblivTableStatus oStatus;
-
-    mappingMemoryContext = AllocSetContextCreate(CurrentMemoryContext, "Obliv Mapping Table",  ALLOCSET_DEFAULT_SIZES);
-    oldContext = MemoryContextSwitchTo(mappingMemoryContext);
-
-    mappingOid = get_relname_relid(OBLIV_MAPPING_TABLE_NAME, PG_PUBLIC_NAMESPACE);
-
-    if (mappingOid != InvalidOid)
-    {
-        oblivMappingRel = heap_open(mappingOid, RowShareLock);
-
-        oStatus = getOblivTableStatus(fdwTableOid, oblivMappingRel);
-        oStatus.tableRelFileNode = fdwTableOid;
-
-        obliv_status = validateIndexStatus(oStatus);
-        if (obliv_status == OBLIVIOUS_UNINTIALIZED)
-        {
-            elog(DEBUG1, "Index has not been created");
-
-
-            //Create heap file for obliv table
-            heapTableRelation = obliv_table_create(oStatus);
-
-            //Create heap file for obliv index.
-            indexRelation = obliv_index_create(oStatus);
-
-            oStatus.heapTableRelFileNode = heapTableRelation->rd_id;
-
-
-            //ipdate ostates data
-            oStatus.indexRelFileNode =  indexRelation->rd_id;
-
-            //update OBLIV_MAPPING_TABLE records
-            setOblivStatusInitated(oStatus, oblivMappingRel);
-        }
-        heap_close(oblivMappingRel, RowShareLock);
-
-    }
-    else
-    {
-        /*
-         * The database administrator should create a Mapping table which maps
-         * the oid of the foreign table to its mirror table counterpart. The
-         * mirror table is used by this extension to find a matching index and
-         * simulate it.
-         *
-         */
-        ereport(ERROR,
-                (errcode(ERRCODE_UNDEFINED_OBJECT),
-                        errmsg("Mapping table %s does not exist in the database!",
-                               OBLIV_MAPPING_TABLE_NAME)));
-    }
-
-    MemoryContextSwitchTo(oldContext);
-    MemoryContextDelete(mappingMemoryContext);
-    elog(DEBUG1, "closed begin foreing modify");
-    PG_RETURN_INT32(0);
-
-}
-
-Datum init_soe(PG_FUNCTION_ARGS){
-
-    Oid fdwTableOid = PG_GETARG_OID(0);
+    //Oid fdwTableOid = PG_GETARG_OID(0);
 
     MemoryContext mappingMemoryContext;
     MemoryContext oldContext;
@@ -254,7 +183,7 @@ Datum init_soe(PG_FUNCTION_ARGS){
 
     if (mappingOid != InvalidOid) {
         oblivMappingRel = heap_open(mappingOid, RowShareLock);
-        oStatus = getOblivTableStatus(fdwTableOid, oblivMappingRel);
+        oStatus = getOblivTableStatus(oid, oblivMappingRel);
         //oblivHeapTable = heap_open(oStatus.heapTableRelFileNode, NoLock);
         //relationName = RelationGetRelationName(oblivHeapTable);
         //heap_close(oblivHeapTable, NoLock);
@@ -270,7 +199,7 @@ Datum init_soe(PG_FUNCTION_ARGS){
     }
     MemoryContextSwitchTo(oldContext);
     MemoryContextDelete(mappingMemoryContext);
-    PG_RETURN_INT32(0);
+   // PG_RETURN_INT32(0);
 
 }
 
@@ -284,9 +213,9 @@ Datum init_soe(PG_FUNCTION_ARGS){
  * used to initialize the necessary resources to have an oblivious heap
  * and oblivious table
  */
-/*static void obliviousBeginForeignModify(ModifyTableState * mtstate,
+static void obliviousBeginForeignModify(ModifyTableState * mtstate,
 							ResultRelInfo * rinfo, List * fdw_private,
-							int subplan_index, int eflags);*/
+							int subplan_index, int eflags);
 
 static TupleTableSlot *obliviousExecForeignInsert(EState * estate,
 						   ResultRelInfo * rinfo,
@@ -315,7 +244,7 @@ oblivpg_fdw_handler(PG_FUNCTION_ARGS)
 	fdwroutine->IsForeignScanParallelSafe = obliviousIsForeignScanParallelSafe;
 
 	/* Oblivious insertion, update, deletion table functions */
-	//fdwroutine->BeginForeignModify = obliviousBeginForeignModify;
+	fdwroutine->BeginForeignModify = obliviousBeginForeignModify;
 	fdwroutine->ExecForeignInsert = obliviousExecForeignInsert;
 
 	PG_RETURN_POINTER(fdwroutine);
@@ -508,7 +437,13 @@ obliviousIsForeignScanParallelSafe(PlannerInfo * root,
 	return false;
 }
 
+static void obliviousBeginForeignModify(ModifyTableState * mtstate,
+                                        ResultRelInfo * rinfo, List * fdw_private,
+                                        int subplan_index, int eflags)
+                                        {
 
+    init_soe(rinfo->ri_RelationDesc->rd_id);
+}
 
 /**
  *  The logic of this function of accessing the relation, tuple and other information to store a tuple was

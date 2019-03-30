@@ -43,9 +43,7 @@ getOblivTableStatus(Oid ftwOid, Relation rel)
 	FdwOblivTableStatus iStatus;
 
 	iStatus.tableRelFileNode = InvalidOid;
-	iStatus.indexRelFileNode = InvalidOid;
 	iStatus.relIndexMirrorId = InvalidOid;
-	iStatus.relam = InvalidOid;
 	iStatus.tableNBlocks = 0;
 	iStatus.indexNBlocks = 0;
 	iStatus.filesInitated = false;
@@ -66,21 +64,15 @@ getOblivTableStatus(Oid ftwOid, Relation rel)
 	{
 		bool        isMirrorTableNull,
 					isMirrorIndexNull,
-					isIndexAmNull,
 		            isTableNBlocksNull,
 		            isIndexNBlocksNull,
-		            isHeapTableOidNull,
-                    isIndexOidNull,
 		            isInitNull;
 
 
 		Datum       dMirrorTableId,
 					dMirrorIndexId,
-					dIndexAm,
 					dTableNBlocks,
 					dIndexNBlocks,
-					dHeapTableOid,
-					dIndexOid,
 					dInit;
 
 		int tableNBlocks = 0;
@@ -88,19 +80,14 @@ getOblivTableStatus(Oid ftwOid, Relation rel)
 
 		dMirrorTableId = heap_getattr(tuple, Anum_obl_mirror_table_oid, tupleDesc, &isMirrorTableNull);
 		dMirrorIndexId = heap_getattr(tuple, Anum_obl_mirror_index_oid, tupleDesc, &isMirrorIndexNull);
-		dIndexAm = heap_getattr(tuple, Anum_obl_mirror_index_am, tupleDesc, &isIndexAmNull);
 		dTableNBlocks = heap_getattr(tuple, Anum_obl_ftw_table_nblocks, tupleDesc, &isTableNBlocksNull);
 		dIndexNBlocks = heap_getattr(tuple, Anum_obl_ftw_index_nblocks, tupleDesc, &isIndexNBlocksNull);
-		dHeapTableOid = heap_getattr(tuple, Anum_obl_ftw_heap_table_relfilenode, tupleDesc, &isHeapTableOidNull),
-        dIndexOid = heap_getattr(tuple, Anum_obl_ftw_index_relfilenode, tupleDesc, &isIndexOidNull);
         dInit = heap_getattr(tuple,  Anum_obl_init, tupleDesc, &isInitNull);
 
 		if (!isMirrorTableNull)
 			iStatus.relTableMirrorId = DatumGetObjectId(dMirrorTableId);
 		if (!isMirrorIndexNull)
 			iStatus.relIndexMirrorId = DatumGetObjectId(dMirrorIndexId);
-		if (!isIndexAmNull)
-			iStatus.relam = DatumGetObjectId(dIndexAm);
 		if(!isTableNBlocksNull) {
 			//iStatus.tableNBlocks = DatumGetInt32(dTableNBlocks);
 			tableNBlocks = DatumGetInt32(dTableNBlocks);
@@ -112,10 +99,6 @@ getOblivTableStatus(Oid ftwOid, Relation rel)
 			elog(DEBUG1, "number of index blocks %d", indexNBlocks);
 			iStatus.indexNBlocks = indexNBlocks;
 		}
-        if(!isIndexOidNull)
-            iStatus.indexRelFileNode = DatumGetObjectId(dIndexOid);
-        if(!isHeapTableOidNull)
-            iStatus.heapTableRelFileNode = DatumGetObjectId(dHeapTableOid);
 		if(!isInitNull)
 			iStatus.filesInitated = DatumGetBool(dInit);
 	}
@@ -180,19 +163,6 @@ validateIndexStatus(FdwOblivTableStatus toValidate)
 		return result;
 	}
 
-	if (toValidate.relam == InvalidOid)
-	{
-		/**
-         * Throw error to warn user that there must be a valid index access method for the Mirror Index.
-         **/
-		ereport(ERROR,
-				(errcode(ERRCODE_UNDEFINED_OBJECT),
-				 errmsg("Oid of access method of mirror Index is not valid on table %s", OBLIV_MAPPING_TABLE_NAME)));
-		return result;
-
-	}
-
-
 
 	if(toValidate.tableNBlocks <= 0 ){
         /**
@@ -253,10 +223,6 @@ void setOblivStatusInitated(FdwOblivTableStatus status, Relation mappingRel){
 		MemSet(new_record, 0, sizeof(new_record));
 		MemSet(new_record_nulls, false, sizeof(new_record_nulls));
 		MemSet(new_record_repl, false, sizeof(new_record_repl));
-        new_record[Anum_obl_ftw_heap_table_relfilenode-1] = ObjectIdGetDatum(status.heapTableRelFileNode);
-        new_record_repl[Anum_obl_ftw_heap_table_relfilenode-1] = true;
-		new_record[Anum_obl_ftw_index_relfilenode-1] = ObjectIdGetDatum(status.indexRelFileNode);
-		new_record_repl[Anum_obl_ftw_index_relfilenode-1] = true;
 		new_record[Anum_obl_init-1] = BoolGetDatum(true);
 		new_record_repl[Anum_obl_init-1] = true;
 

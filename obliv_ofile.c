@@ -27,13 +27,10 @@ static void fileClose(const char *filename);
 
 void setupOblivStatus(FdwOblivTableStatus instatus){
     elog(DEBUG1, "setup obliv status");
-    status.heapTableRelFileNode = instatus.heapTableRelFileNode;
-    status.indexRelFileNode = instatus.indexRelFileNode;
     status.relTableMirrorId = instatus.relTableMirrorId;
     status.relIndexMirrorId = instatus.relIndexMirrorId;
     status.tableRelFileNode = instatus.tableRelFileNode;
     status.filesInitated = instatus.filesInitated;
-    status.relam =instatus.relam;
     status.indexNBlocks = instatus.indexNBlocks;
     status.tableNBlocks = instatus.tableNBlocks;
 }
@@ -69,7 +66,7 @@ void fileInit(const char *filename, unsigned int nblocks, unsigned int blocksize
 
 
 
-    elog(DEBUG1, "Initializing oblivious file for relation %s, heap OID %u, with a total of %u blocks  of size %u bytes", filename, status.heapTableRelFileNode, nblocks, blocksize);
+    elog(DEBUG1, "Initializing oblivious file for relation %s, heap OID %u, with a total of %u blocks  of size %u bytes", filename, status.relTableMirrorId, nblocks, blocksize);
 
 	if(status.relTableMirrorId != InvalidOid){
 
@@ -150,8 +147,8 @@ void fileRead(PLBlock block, const char *filename, const BlockNumber ob_blkno) {
     }*/
 
 
-    if(status.heapTableRelFileNode != InvalidOid){
-        rel =  heap_open(status.heapTableRelFileNode, RowExclusiveLock);
+    if(status.relTableMirrorId != InvalidOid){
+        rel =  heap_open(status.relTableMirrorId, RowExclusiveLock);
         elog(DEBUG1, "Going to read buffer for block %d", ob_blkno);
         targetBlock =  RelationGetTargetBlock(rel);
         elog(DEBUG1, "Relation get target block %d", targetBlock);
@@ -170,6 +167,7 @@ void fileRead(PLBlock block, const char *filename, const BlockNumber ob_blkno) {
         page = BufferGetPage(buffer);
         pagesize =  BufferGetPageSize(buffer);
         oopaque = (OblivPageOpaque) PageGetSpecialPointer(page);
+        elog(DEBUG1, "real block number is %d", oopaque->o_blkno);
         page_size = BufferGetPageSize(buffer);
         block->block = (void*) malloc(page_size);
         elog(DEBUG1, "copy postgres block to block %u ", pagesize);
@@ -211,8 +209,8 @@ void fileWrite(const PLBlock block, const char *filename, const BlockNumber ob_b
         heap_close(oblivMappingRel, AccessShareLock);
     }*/
 
-    if(status.heapTableRelFileNode != InvalidOid){
-        rel =  heap_open(status.heapTableRelFileNode, RowExclusiveLock);
+    if(status.relTableMirrorId != InvalidOid){
+        rel =  heap_open(status.relTableMirrorId, RowExclusiveLock);
         buffer = ReadBuffer(rel,  ob_blkno);
 
         elog(DEBUG1, "Buffer read block number is %d", BufferGetBlockNumber(buffer));

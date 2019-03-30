@@ -13,17 +13,15 @@ create table obl_ftw(
 	ftw_table_oid Oid,
 	mirror_table_oid Oid,
 	mirror_index_oid Oid,
-	mirror_index_am Oid,
 	ftw_table_nblocks integer,
 	ftw_index_nblocks integer,
-	ftw_heap_table_oid Oid,
-	ftw_index_oid Oid,
 	init 	boolean
 );
 
 CREATE EXTENSION oblivpg_fdw;
 CREATE SERVER obliv FOREIGN DATA WRAPPER oblivpg_fdw;
 CREATE FOREIGN DATA WRAPPER oblivpg_fdw OPTIONS (debug 'true');
+CREATE FOREIGN DATA WRAPPER oblivpg_fdw  HANDLER oblivpg_fdw_handler;
 CREATE FOREIGN TABLE ftw_users(
 	id integer,
 	name varchar(50),
@@ -35,7 +33,7 @@ CREATE FOREIGN TABLE ftw_users(
 DROP extension oblivpg_fdw CASCADE;
 DROP FOREIGN TABLE obliv_users;
 
-INSERT INTO obliv_users (id, name, age, gender, email) values (1, 'teste', 20, 1, 'teste');
+INSERT INTO ftw_users (id, name, age, gender, email) values (1, 'teste', 20, 1, 'teste');
 
 select pg_backend_pid();
 
@@ -53,7 +51,7 @@ select relam from pg_class where oid = ?;
 make CFLAGS='-Wall -Wmissing-prototypes -Wpointer-arith -Wdeclaration-after-statement -Wendif-labels -Wmissing-format-attribute -Wformat-security -fno-strict-aliasing -fwrapv -Wno-unused-command-line-argument -g -O0'
 
 
-insert into obl_ftw (ftw_table_oid, mirror_table_oid, mirror_index_oid, mirror_index_am, ftw_table_nblocks, ftw_index_nblocks, ftw_heap_table_oid, ftw_index_oid, init) values(16401, 16385,   16388, 405, 100, 100, NULL, NULL, false);
+insert into obl_ftw (ftw_table_oid, mirror_table_oid, mirror_index_oid, ftw_table_nblocks, ftw_index_nblocks, init) values(16394, 16385, 16388, 100, 100, false);
 
 
 CREATE FUNCTION setup_obliv_tables(int4) RETURNS int4
@@ -64,4 +62,5 @@ CREATE FUNCTION init_soe(int4) RETURNS int4
     AS 'oblivpg_fdw', 'init_soe'
     LANGUAGE C STRICT;
 
-select setup_obliv_tables(16401);
+select setup_obliv_tables(16394);
+select init_soe(16394);
