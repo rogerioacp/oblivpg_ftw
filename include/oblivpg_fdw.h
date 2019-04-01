@@ -15,8 +15,6 @@
  */
 typedef struct OblivScanState{
 
-    Relation table; /*relcache entry for the obliviously simulated table*/
-    Relation index; /*relcache entry for the obliviously simulated index*/
 
     Relation mirrorTable; /*relchache entry for the mirror table*/
     Relation mirrorIndex; /*relcache entry for the mirror index*/

@@ -13,7 +13,7 @@
 #include "storage/smgr.h"
 
 FdwOblivTableStatus status;
-
+int totalBlocks;
 
 static void fileInit(const char *fileName, unsigned int totalNodes, unsigned int blockSize);
 
@@ -36,6 +36,31 @@ void setupOblivStatus(FdwOblivTableStatus instatus){
 }
 
 
+
+void logSpecialPointerData(){
+
+    int index;
+    Relation rel;
+    Buffer buffer = 0;
+    Page page = NULL;
+    OblivPageOpaque oopaque;
+    rel =  heap_open(status.relTableMirrorId, RowExclusiveLock);
+    for(index = 0; index < totalBlocks; index++){
+        buffer = ReadBuffer(rel, index);
+        page =  BufferGetPage(buffer);
+        oopaque = (OblivPageOpaque) PageGetSpecialPointer(page);
+        ReleaseBuffer(buffer);
+        elog(DEBUG1, "Block number %d  has special pointer value %d ", index, oopaque->o_blkno);
+
+    }
+    heap_close(rel, RowExclusiveLock);
+
+}
+
+
+
+
+
 /**
  *
  * This function follows a logic similar to the function RelationAddExtraBlocks in hio.c which  pre-extend a
@@ -51,6 +76,7 @@ void fileInit(const char *filename, unsigned int nblocks, unsigned int blocksize
     Page page = NULL;
     Buffer buffer = 0;
     OblivPageOpaque oopaque;
+    totalBlocks = nblocks;
     //Relation oblivMappingRel;
     //FdwOblivTableStatus oStatus;
 
@@ -135,7 +161,7 @@ void fileRead(PLBlock block, const char *filename, const BlockNumber ob_blkno) {
     FdwOblivTableStatus oStatus;*/
 
 
-    elog(DEBUG1, "fileRead %s block %u", filename, ob_blkno);
+    //elog(DEBUG1, "fileRead %s block %u", filename, ob_blkno);
 
    /* relOid = get_relname_relid(filename, PG_PUBLIC_NAMESPACE);
     mappingOid = get_relname_relid(OBLIV_MAPPING_TABLE_NAME, PG_PUBLIC_NAMESPACE);
@@ -149,12 +175,12 @@ void fileRead(PLBlock block, const char *filename, const BlockNumber ob_blkno) {
 
     if(status.relTableMirrorId != InvalidOid){
         rel =  heap_open(status.relTableMirrorId, RowExclusiveLock);
-        elog(DEBUG1, "Going to read buffer for block %d", ob_blkno);
-        targetBlock =  RelationGetTargetBlock(rel);
-        elog(DEBUG1, "Relation get target block %d", targetBlock);
+       // elog(DEBUG1, "Going to read buffer for block %d", ob_blkno);
+        //targetBlock =  RelationGetTargetBlock(rel);
+        //elog(DEBUG1, "Relation get target block %d", targetBlock);
         buffer = ReadBuffer(rel,  ob_blkno);
 
-        elog(DEBUG1, "Buffer read block number is %d", BufferGetBlockNumber(buffer));
+        //elog(DEBUG1, "Buffer read block number is %d", BufferGetBlockNumber(buffer));
 
         /**
          *
@@ -162,21 +188,21 @@ void fileRead(PLBlock block, const char *filename, const BlockNumber ob_blkno) {
          * create some problems if posgres implementation requires any locks.
          *
          * */
-         elog(DEBUG1, "Getting page from buffer");
+        // elog(DEBUG1, "Getting page from buffer");
 
         page = BufferGetPage(buffer);
-        pagesize =  BufferGetPageSize(buffer);
+        ///pagesize =  BufferGetPageSize(buffer);
         oopaque = (OblivPageOpaque) PageGetSpecialPointer(page);
-        elog(DEBUG1, "real block number is %d", oopaque->o_blkno);
+        elog(DEBUG1, " fileRead oblivious blockNumber %d that is real block %d", ob_blkno, oopaque->o_blkno);
         page_size = BufferGetPageSize(buffer);
         block->block = (void*) malloc(page_size);
-        elog(DEBUG1, "copy postgres block to block %u ", pagesize);
+        //elog(DEBUG1, "copy postgres block to block %u ", pagesize);
         memcpy(block->block, (char*) page, page_size);
         block->blkno = oopaque->o_blkno;
         block->size = page_size;
         ReleaseBuffer(buffer);
 
-        elog(DEBUG1, "fileRead closing relation");
+        //elog(DEBUG1, "fileRead closing relation");
 
         heap_close(rel, RowExclusiveLock);
 
@@ -196,9 +222,11 @@ void fileWrite(const PLBlock block, const char *filename, const BlockNumber ob_b
     Relation rel;
     Page page = NULL;
     Buffer buffer = 0;
-   // Relation oblivMappingRel;
+    OblivPageOpaque oopaque;
+
+    // Relation oblivMappingRel;
     //FdwOblivTableStatus oStatus;
-    elog(DEBUG1, "fileWrite %s block %u", filename, ob_blkno);
+    //elog(DEBUG1, "fileWrite %s block %u", filename, ob_blkno);
 
     // relOid = get_relname_relid(filename, PG_PUBLIC_NAMESPACE);
     //mappingOid = get_relname_relid(OBLIV_MAPPING_TABLE_NAME, PG_PUBLIC_NAMESPACE);
@@ -213,7 +241,7 @@ void fileWrite(const PLBlock block, const char *filename, const BlockNumber ob_b
         rel =  heap_open(status.relTableMirrorId, RowExclusiveLock);
         buffer = ReadBuffer(rel,  ob_blkno);
 
-        elog(DEBUG1, "Buffer read block number is %d", BufferGetBlockNumber(buffer));
+        //elog(DEBUG1, "Buffer read block number is %d", BufferGetBlockNumber(buffer));
 
         /**
          *
@@ -223,13 +251,19 @@ void fileWrite(const PLBlock block, const char *filename, const BlockNumber ob_b
          * */
         page = BufferGetPage(buffer);
 
-        memcpy(page+sizeof(PageHeaderData), block->block, block->size);
+        memcpy(page, block->block, block->size);
+
+        oopaque = (OblivPageOpaque) PageGetSpecialPointer(page);
+        if(block->blkno == DUMMY_BLOCK){
+            oopaque->o_blkno = DUMMY_BLOCK;
+        }
+        elog(DEBUG1, " fileWrite oblivious blockNumber %d that is real block %d", ob_blkno, oopaque->o_blkno);
 
         MarkBufferDirty(buffer);
 
         ReleaseBuffer(buffer);
         heap_close(rel, RowExclusiveLock);
-        elog(DEBUG1, "complete fileWrite %s block %u", filename, ob_blkno);
+       // elog(DEBUG1, "complete fileWrite %s block %u", filename, ob_blkno);
 
     }else{
         ereport(ERROR,
@@ -242,6 +276,8 @@ void fileWrite(const PLBlock block, const char *filename, const BlockNumber ob_b
 
 void fileClose(const char * filename) {
 }
+
+
 
 AMOFile *ofileCreate(){
 

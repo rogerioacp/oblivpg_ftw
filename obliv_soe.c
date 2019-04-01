@@ -67,8 +67,8 @@ void initSOE(char* relName, size_t nblocks, size_t bucketCapacity) {
         stateTable = init(relName, fileSize, BLCKSZ, bucketCapacity, amgr);
         currentBlock =  0;
         elog(DEBUG1, "SOE initialized for table %s", relName);
-        //int teste =  amgr->am_pmap->pmget(relName, 0);
-        //elog(DEBUG1, "PMAP get position for block %d in pos %d",0, teste);
+        int teste =  amgr->am_pmap->pmget(relName, 0);
+        elog(DEBUG1, "PMAP get position for block %d in pos %d",0, teste);
 
     }
 
@@ -80,7 +80,7 @@ void initSOE(char* relName, size_t nblocks, size_t bucketCapacity) {
 //This function follows the flow of inserting a tuple from RelationPutHeapTuple(hio.c) and PageAddItem(bufpage.c)
 void insertTuple(const char* relname, Item item, Size size)
 {
-    elog(DEBUG1, "gettuple %d", currentBlock);
+    elog(DEBUG1, "------------------ inserttuple %d", currentBlock);
 
     /**
      * When an insert operation is received on the enclave, the enclave has to index the inserted value and
@@ -94,9 +94,9 @@ void insertTuple(const char* relname, Item item, Size size)
     OblivPageOpaque oopaque;
 
 
-    elog(DEBUG1, "Reading block %d from oram file", currentBlock);
+   // elog(DEBUG1, "Reading block %d from oram file", currentBlock);
     result = read(&page, (BlockNumber) currentBlock, stateTable);
-
+   // elog(DEBUG1, "Read result is %d", result);
     if(result == DUMMY_BLOCK){
 
         /**
@@ -112,11 +112,11 @@ void insertTuple(const char* relname, Item item, Size size)
         PageInit(page, BLCKSZ, sizeof(OblivPageOpaqueData));
         oopaque = (OblivPageOpaque) PageGetSpecialPointer(page);
         oopaque->o_blkno = currentBlock;
-        elog(DEBUG1, "Page allocated and initalized.");
+       // elog(DEBUG1, "Page allocated and initalized.");
     }
 
 
-    elog(DEBUG1, "Page from block %d read", currentBlock);
+   // elog(DEBUG1, "Page from block %d read", currentBlock);
 
     OffsetNumber limit;
     OffsetNumber offsetNumber;
@@ -178,7 +178,7 @@ void insertTuple(const char* relname, Item item, Size size)
 
     /* set the item pointer */
     ItemIdSetNormal(itemId, upper, size);
-    elog(DEBUG1, "Writting item to offset %d\n", upper);
+    //elog(DEBUG1, "Writting item to offset %d\n", upper);
 
     /* copy the item's data onto the page */
     memcpy((char *) page + upper, item, size);
@@ -187,10 +187,10 @@ void insertTuple(const char* relname, Item item, Size size)
     phdr->pd_lower = (LocationIndex) lower;
     phdr->pd_upper = (LocationIndex) upper;
 
-    elog(DEBUG1, "page header lower %d\n", lower);
-    elog(DEBUG1, "page header lower %d\n", upper);
+    //elog(DEBUG1, "page header lower %d\n", lower);
+    //elog(DEBUG1, "page header lower %d\n", upper);
 
-
+    elog(DEBUG1, " --------------------  Going to update page on disk");
     result  = write(page, BLCKSZ, (BlockNumber) currentBlock, stateTable);
     /**Whether the page was allocated in this function or in page_read on the obliv_ofile.c, it can be freed as it will
      *no longer be used. Test for memory leaks.
@@ -202,7 +202,7 @@ void insertTuple(const char* relname, Item item, Size size)
 
 bool getTuple(OblivScanState* state){
 
-    elog(DEBUG1, "gettuple %d", currentBlock);
+    elog(DEBUG1, "----------------------gettuple %d", currentBlock);
 
     char* page;
     int result;
@@ -213,6 +213,7 @@ bool getTuple(OblivScanState* state){
 
     elog(DEBUG1, "Reading block %d from oram file", currentBlock);
     result = read(&page, (BlockNumber) currentBlock, stateTable);
+    elog(DEBUG1, "block read from oram heap %d", result);
 
     if(result == DUMMY_BLOCK) {
 
@@ -225,10 +226,10 @@ bool getTuple(OblivScanState* state){
     lineoff = PageGetMaxOffsetNumber(page);
     lpp = PageGetItemId((Page) page, lineoff);
     Assert(ItemIdIsNormal(lpp));
-    tuple->t_data = (HeapTupleHeader) PageGetItem((Page) page, lpp);
+    HeapTupleHeader item_data = (HeapTupleHeader) PageGetItem((Page) page, lpp);
+    tuple->t_data = item_data;
     tuple->t_len = ItemIdGetLength(lpp);
     ItemPointerSet(&(tuple->t_self), (BlockNumber) currentBlock, lineoff);
-
 
     return true;
 

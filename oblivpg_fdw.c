@@ -93,9 +93,11 @@ extern void _PG_fini(void);
 
 
 
-//PG_FUNCTION_INFO_V1(init_soe);
+PG_FUNCTION_INFO_V1(init_soe);
+PG_FUNCTION_INFO_V1(log_special_pointer);
 
 
+int teste;
 
 
 
@@ -108,6 +110,7 @@ extern void _PG_fini(void);
 void
 _PG_init()
 {
+    teste = 0;
 	elog(DEBUG1, "In _PG_init");
 }
 
@@ -122,7 +125,6 @@ _PG_fini()
 	elog(DEBUG1, "In _PG_fini");
 
 }
-
 
 
 
@@ -164,9 +166,9 @@ static bool obliviousIsForeignScanParallelSafe(PlannerInfo * root,
 								   RangeTblEntry * rte);
 
 
-void init_soe(Oid oid){
+Datum init_soe(PG_FUNCTION_ARGS){
 
-    //Oid fdwTableOid = PG_GETARG_OID(0);
+    Oid oid = PG_GETARG_OID(0);
 
     MemoryContext mappingMemoryContext;
     MemoryContext oldContext;
@@ -199,11 +201,16 @@ void init_soe(Oid oid){
     }
     MemoryContextSwitchTo(oldContext);
     MemoryContextDelete(mappingMemoryContext);
-   // PG_RETURN_INT32(0);
+   PG_RETURN_INT32(0);
 
 }
 
 
+Datum log_special_pointer(PG_FUNCTION_ARGS) {
+    logSpecialPointerData();
+    PG_RETURN_INT32(0);
+
+}
 
 /* Functions for updating foreign tables */
 
@@ -358,13 +365,20 @@ obliviousBeginForeignScan(ForeignScanState * node, int eflags)
 		oStatus.tableRelFileNode = oblivFDWTable->rd_id;
 		obliv_status = validateIndexStatus(oStatus);
 
-		if(obliv_status == OBLIVIOUS_INITIALIZED){
+		//if(obliv_status == OBLIVIOUS_INITIALIZED){
+		    elog(DEBUG1, "initializing fsstate %d", obliv_status);
 			fsstate = (OblivScanState *) palloc0(sizeof(OblivScanState));
-			node->fdw_state = (void *) fsstate;
+            fsstate->mirrorIndex = NULL;
+            fsstate->mirrorTable = NULL;
+            fsstate->indexTupdesc = NULL;
+            fsstate->query = NULL;
+            fsstate->working_cxt = NULL;
+
+            node->fdw_state = (void *) fsstate;
 			//fsstate->table = heap_open(oStatus.relTableMirrorId,  AccessShareLock);
 			//fsstate->index = heap_open(oStatus.indexRelFileNode, AccessShareLock);
 			//fsstate->tableTupdesc = RelationGetDescr(node->ss.ss_currentRelation);
-		}
+		//}
 		heap_close(oblivMappingRel, AccessShareLock);
 		/*relationName = RelationGetRelationName(oblivFDWTable);
 		initSOE(relationName, (size_t) oStatus.tableNBlocks, 1);
@@ -377,12 +391,18 @@ obliviousBeginForeignScan(ForeignScanState * node, int eflags)
 static TupleTableSlot *
 obliviousIterateForeignScan(ForeignScanState * node)
 {
-	OblivScanState *fsstate;
+
+
+	OblivScanState* fsstate = (OblivScanState *) node->fdw_state;
+
     TupleTableSlot *tupleSlot;
 	bool nextRowFound = false;
-	fsstate = (OblivScanState *) node->fdw_state;
 	tupleSlot = node->ss.ss_ScanTupleSlot;
 
+    if(teste == 1){
+        return ExecClearTuple(tupleSlot);
+
+    }
 	elog(DEBUG1, "Going to read tuple in function getTuple");
 	nextRowFound = getTuple(fsstate);
 
@@ -390,7 +410,7 @@ obliviousIterateForeignScan(ForeignScanState * node)
 	{
 		ExecStoreTuple(&(fsstate->tuple), tupleSlot, InvalidBuffer, false);
 	}
-
+    teste = 1;
 	return tupleSlot;
 }
 
@@ -442,7 +462,7 @@ static void obliviousBeginForeignModify(ModifyTableState * mtstate,
                                         int subplan_index, int eflags)
                                         {
 
-    init_soe(rinfo->ri_RelationDesc->rd_id);
+   // init_soe(rinfo->ri_RelationDesc->rd_id);
 }
 
 /**
