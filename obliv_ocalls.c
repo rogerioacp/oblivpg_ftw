@@ -235,7 +235,7 @@ outFileRead(char* page, const char* filename, int blkno, int pageSize)
   	Page heapPage;
     bool isIndex;
   	Oid targetTable;
-    OblivPageOpaque oopaque;
+    //OblivPageOpaque oopaque;
 
 
     if(strcmp(filename, tableName) == 0)
@@ -281,7 +281,7 @@ outFileRead(char* page, const char* filename, int blkno, int pageSize)
 
         memcpy(page, heapPage, pageSize);
        
-        oopaque = (OblivPageOpaque) PageGetSpecialPointer(page);
+        //oopaque = (OblivPageOpaque) PageGetSpecialPointer(page);
         //elog(DEBUG1, "Read block number %d which has real block %d", blkno,oopaque->o_blkno);
         ReleaseBuffer(buffer);
 
@@ -319,10 +319,10 @@ outFileWrite(const char* page, const char* filename, int blkno, int pageSize)
     Buffer buffer = 0;
     bool isIndex;
     Oid targetTable;
-    OblivPageOpaque oopaque;
-    OblivPageOpaque oopaqueOriginal;
+   // OblivPageOpaque oopaque;
+    //OblivPageOpaque oopaqueOriginal;
 
-    oopaqueOriginal = (OblivPageOpaque) PageGetSpecialPointer(page);
+    //oopaqueOriginal = (OblivPageOpaque) PageGetSpecialPointer(page);
     //elog(DEBUG1, "Original block has blkno %d", oopaqueOriginal->o_blkno);
 
     if(strcmp(filename, tableName) == 0){
@@ -370,7 +370,7 @@ outFileWrite(const char* page, const char* filename, int blkno, int pageSize)
 
         memcpy(heapPage, page, pageSize);
 
-        oopaque = (OblivPageOpaque) PageGetSpecialPointer(heapPage);
+        //oopaque = (OblivPageOpaque) PageGetSpecialPointer(heapPage);
         //elog(DEBUG1, "Write block number %d which has real block %d", blkno, oopaque->o_blkno);
 
         MarkBufferDirty(buffer);

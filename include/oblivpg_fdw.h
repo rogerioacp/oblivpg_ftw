@@ -7,6 +7,8 @@
 
 #include "access/tupdesc.h"
 #include "utils/rel.h"
+#include "access/htup_details.h"
+
 
 /*
  * Execution state of a foreign scan using postgres_fdw.
@@ -33,6 +35,7 @@ typedef struct OblivScanState{
      * In the future oblivpg might have a batch of resuts to return to the client
      **/
     HeapTupleData tuple;			/* array of currently-retrieved tuples */
+    HeapTupleHeader tupleHeader;    /* Temporary Tuple Header location*/
     //int			num_tuples;		/* # of tuples in array */
     //int			next_tuple;		/* index of next one to return */
 

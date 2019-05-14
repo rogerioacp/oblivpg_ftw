@@ -118,6 +118,9 @@ PG_FUNCTION_INFO_V1(close_enclave);
 /* Default CPU cost to start up a foreign query. */
 #define DEFAULT_OBLIV_FDW_TOTAL_COST	100.0
 
+/* Predefined max tuple size for sgx to copy the real tuple to*/
+#define MAX_TUPLE_SIZE 200
+
 #define ENCLAVE_LIB "/usr/local/lib/soe/libsoe.signed.so"
 
 #define HEAP_ACCESS_TEST 1
@@ -142,7 +145,9 @@ uint32 tupleLen;
  * used for every database initialization.
  */
 void
-_PG_init(){}
+_PG_init()
+{
+}
 
 /**
  * Postgres cleaning function which is called just before an extension is
@@ -482,7 +487,8 @@ obliviousBeginForeignScan(ForeignScanState * node, int eflags)
             fsstate->indexTupdesc = NULL;
             fsstate->query = NULL;
             fsstate->working_cxt = NULL;
-
+            fsstate->tupleHeader = (HeapTupleHeader) malloc(MAX_TUPLE_SIZE);
+            memset(fsstate->tupleHeader, 0, MAX_TUPLE_SIZE);
             node->fdw_state = (void *) fsstate;
 			//fsstate->table = heap_open(oStatus.relTableMirrorId,  AccessShareLock);
 			//fsstate->index = heap_open(oStatus.indexRelFileNode, AccessShareLock);
@@ -512,12 +518,19 @@ obliviousIterateForeignScan(ForeignScanState * node)
     }
 	elog(DEBUG1, "Going to read tuple in function getTuple");
 	if(test == HEAP_ACCESS_TEST){
+
+		/**
+		* The real tuple header size is set inside of the enclave on the
+		* HeapTupleData strut in the field t_len;
+		*/
 		#ifndef UNSAFE
-			getTupleTID(enclave_id, blkno, offnum, (char*) &(fsstate->tuple) ,tupleLen);
+		getTupleTID(enclave_id, blkno, offnum, (char*) &(fsstate->tuple), sizeof(HeapTupleData), (char*) fsstate->tupleHeader, MAX_TUPLE_SIZE);
 		#else
-			getTupleTID(blkno, offnum, (char*) &(fsstate->tuple) ,tupleLen);
+			getTupleTID(blkno, offnum, (char*) &(fsstate->tuple) ,sizeof(HeapTupleData),
+				(char*) fsstate->tupleHeader, MAX_TUPLE_SIZE);
 		#endif
 		single_row = 1;
+		fsstate->tuple.t_data = fsstate->tupleHeader;
 	}
 
 	if (nextRowFound)
@@ -616,10 +629,10 @@ obliviousExecForeignInsert(EState * estate,
 	tuple = heap_prepare_insert(resultRelationDesc, tuple, xid, estate->es_output_cid, 0);
     tupleLen = tuple->t_len;
 
-    elog(DEBUG1, "Inserting tuple with ecall that has size %d", tupleLen);
+    //elog(DEBUG1, "Inserting tuple with ecall that has size %d", tupleLen);
     if(test == HEAP_ACCESS_TEST){
 
-    	elog(DEBUG1, "Heap Access Test with tuple of size %d", tuple->t_len);
+    	//elog(DEBUG1, "Heap Access Test with tuple of size %d", tuple->t_len);
 
     	#ifdef UNSAFE
     	   insertHeap((char*) tuple->t_data, tuple->t_len);
