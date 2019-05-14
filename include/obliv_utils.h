@@ -13,7 +13,6 @@
 #ifndef OBLIV_UTILS_H
 #define OBLIV_UTILS_H
 
-
 #include "postgres.h"
 #include "access/heapam.h"
 

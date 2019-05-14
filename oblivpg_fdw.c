@@ -16,7 +16,7 @@
 
 #include "include/obliv_status.h"
 //#include "include/obliv_heap_manager.h"
-#include "include/obliv_soe.h"
+//#include "include/obliv_soe.h"
 #include "include/obliv_utils.h"
 #include "include/oblivpg_fdw.h"
 #include "include/obliv_ofile.h"
@@ -36,6 +36,18 @@
 #include "optimizer/pathnode.h"
 #include "optimizer/planmain.h"
 #include "executor/tuptable.h"
+
+/**
+ * SGX includes
+ */
+
+// Needed to create enclave and do ecall.
+#ifndef UNSAFE
+#include "sgx_urts.h"
+#include "Enclave_u.h"
+#else
+#include "Enclave_dt.h"
+#endif
 
 
 /**
@@ -95,37 +107,9 @@ extern void _PG_fini(void);
 
 PG_FUNCTION_INFO_V1(init_soe);
 PG_FUNCTION_INFO_V1(log_special_pointer);
-
-
-int teste;
-
-
-
-
-/**
- * Postgres initialization function which is called immediately after the an
- * extension is loaded. This function can latter be used to initialize SGX
- * enclaves and set-up Remote attestation.
- */
-void
-_PG_init()
-{
-    teste = 0;
-	elog(DEBUG1, "In _PG_init");
-}
-
-/**
- * Postgres cleaning function which is called just before an extension is
- * unloaded from a server. This function can latter be used to close SGX
- * enclaves and clean the final context.
- */
-void
-_PG_fini()
-{
-	elog(DEBUG1, "In _PG_fini");
-
-}
-
+PG_FUNCTION_INFO_V1(open_enclave);
+PG_FUNCTION_INFO_V1(set_row);
+PG_FUNCTION_INFO_V1(close_enclave);
 
 
 /* Default CPU cost to start up a foreign query. */
@@ -133,6 +117,40 @@ _PG_fini()
 
 /* Default CPU cost to start up a foreign query. */
 #define DEFAULT_OBLIV_FDW_TOTAL_COST	100.0
+
+#define ENCLAVE_LIB "/usr/local/lib/soe/libsoe.signed.so"
+
+#define HEAP_ACCESS_TEST 1
+#define INDEX_ACCESS_TEST 2
+int test;
+int single_row = 0;
+
+#ifndef UNSAFE
+sgx_enclave_id_t  enclave_id = 0;
+#endif
+// Pointer to row to access during HEAP_ACCESS_TEST
+BlockNumber blkno;
+OffsetNumber offnum;
+uint32 tupleLen;
+
+/**
+ * Postgres initialization function which is called immediately after the an
+ * extension is loaded. This function can latter be used to initialize SGX
+ * enclaves and set-up Remote attestation.
+ *
+ * This function is only called when an extension is first created. It is not
+ * used for every database initialization.
+ */
+void
+_PG_init(){}
+
+/**
+ * Postgres cleaning function which is called just before an extension is
+ * unloaded from a server. This function can latter be used to close SGX
+ * enclaves and clean the final context.
+ */
+void
+_PG_fini(){}
 
 
 /*
@@ -168,49 +186,140 @@ static bool obliviousIsForeignScanParallelSafe(PlannerInfo * root,
 
 Datum init_soe(PG_FUNCTION_ARGS){
 
-    Oid oid = PG_GETARG_OID(0);
+    Oid oid;
+    Oid	mappingOid;
+	sgx_status_t status;
 
     MemoryContext mappingMemoryContext;
     MemoryContext oldContext;
-    Oid			mappingOid;
 
     Relation oblivMappingRel;
-    //Relation oblivHeapTable;
-    FdwOblivTableStatus oStatus;
-   // char* relationName;
+    Relation mirrorHeapTable;
+    Relation mirrorIndexTable;
 
+    FdwOblivTableStatus oStatus;
+    char* mirrorTableRelationName;
+    char* mirrorIndexRelationName;
+
+ 	oid = PG_GETARG_OID(0); //Foreign table wrapper oid
+    test = PG_GETARG_UINT32(1); // Test run or deployment
+
+    status = SGX_SUCCESS;
     mappingMemoryContext = AllocSetContextCreate(CurrentMemoryContext, "Obliv Mapping Table",  ALLOCSET_DEFAULT_SIZES);
     oldContext = MemoryContextSwitchTo(mappingMemoryContext);
     mappingOid = get_relname_relid(OBLIV_MAPPING_TABLE_NAME, PG_PUBLIC_NAMESPACE);
 
     if (mappingOid != InvalidOid) {
-        oblivMappingRel = heap_open(mappingOid, RowShareLock);
-        oStatus = getOblivTableStatus(oid, oblivMappingRel);
-        //oblivHeapTable = heap_open(oStatus.heapTableRelFileNode, NoLock);
-        //relationName = RelationGetRelationName(oblivHeapTable);
-        //heap_close(oblivHeapTable, NoLock);
-        setupOblivStatus(oStatus);
 
-        /**
-         * Initiate secure operator evaluator (SOE).
-         * Current ORAM bucket capacity is hardcoded to 1.
-         * */
-        initSOE("teste", (size_t) oStatus.tableNBlocks, 1);
+        oblivMappingRel = heap_open(mappingOid, RowShareLock);
+        elog(DEBUG1, "GetOblivTableStatus");
+        
+        oStatus = getOblivTableStatus(oid, oblivMappingRel);
+        elog(DEBUG1, "Open Mirror relation table");
+
+        mirrorHeapTable = heap_open(oStatus.relTableMirrorId, NoLock);
+        mirrorTableRelationName = RelationGetRelationName(mirrorHeapTable);
+        elog(DEBUG1, "Open Mirror index table");
+
+        mirrorIndexTable = index_open(oStatus.relIndexMirrorId, NoLock);
+        elog(DEBUG1, "Get index Name");
+        mirrorIndexRelationName = RelationGetRelationName(mirrorIndexTable);
+
+        setupOblivStatus(oStatus, mirrorTableRelationName, mirrorIndexRelationName);
+        elog(DEBUG1, "Initializing SOE in enclave");
+
+        #ifndef UNSAFE
+        status = initSOE(enclave_id, 
+        		mirrorTableRelationName, 
+        		mirrorIndexRelationName, 
+        		oStatus.tableNBlocks, 
+        		oStatus.indexNBlocks, 
+        		oStatus.relTableMirrorId, 
+        		oStatus.relIndexMirrorId);
+        #else
+        	initSOE(mirrorTableRelationName, 
+        		mirrorIndexRelationName, 
+        		oStatus.tableNBlocks, 
+        		oStatus.indexNBlocks, 
+        		oStatus.relTableMirrorId, 
+        		oStatus.relIndexMirrorId);
+        #endif
+        if(status != SGX_SUCCESS){
+        	elog(DEBUG1, "SOE initialization failed");
+        }
+
+        heap_close(mirrorHeapTable, NoLock);
+        index_close(mirrorIndexTable, NoLock);
         heap_close(oblivMappingRel, RowShareLock);
 
     }
     MemoryContextSwitchTo(oldContext);
     MemoryContextDelete(mappingMemoryContext);
-   PG_RETURN_INT32(0);
-
-}
-
-
-Datum log_special_pointer(PG_FUNCTION_ARGS) {
-    logSpecialPointerData();
     PG_RETURN_INT32(0);
 
 }
+
+
+
+Datum log_special_pointer(PG_FUNCTION_ARGS) {
+	PG_RETURN_INT32(0);
+}
+
+Datum open_enclave(PG_FUNCTION_ARGS) {
+	#ifndef UNSAFE
+		sgx_status_t status;
+		int token_update;
+		sgx_launch_token_t token;
+
+		token_update = 0;
+
+		memset(&token, 0, sizeof(sgx_launch_token_t));
+
+		status = sgx_create_enclave(ENCLAVE_LIB,
+		 						  SGX_DEBUG_FLAG,
+		 						  &token,
+		 						  &token_update,
+	                              &enclave_id, NULL);
+
+	    if(SGX_SUCCESS != status)
+	    {
+	    	elog(DEBUG1, "Enclave was not created. Return error %d", status);
+	    	sgx_destroy_enclave(enclave_id);
+	    	PG_RETURN_INT32(status);
+
+	    }
+
+	    elog(DEBUG1, "Enclave successfully created");
+	    PG_RETURN_INT32(status);
+	#else
+    	PG_RETURN_INT32(0);
+    #endif
+}
+
+
+Datum set_row(PG_FUNCTION_ARGS) {
+	blkno = PG_GETARG_UINT32(0);
+	offnum = PG_GETARG_UINT32(1);
+	PG_RETURN_VOID();
+}
+
+Datum close_enclave(PG_FUNCTION_ARGS) {
+	#ifndef UNSAFE
+		sgx_status_t status;
+		status = sgx_destroy_enclave(enclave_id);
+
+		if(SGX_SUCCESS != status){
+			elog(DEBUG1, "Enclave was not destroyed. Return error %d", status);
+			PG_RETURN_INT32(status);
+		}
+
+		elog(DEBUG1, "Enclave destroyed");
+		PG_RETURN_INT32(status);
+   #else
+		PG_RETURN_INT32(0);
+   #endif
+}
+
 
 /* Functions for updating foreign tables */
 
@@ -391,26 +500,30 @@ obliviousBeginForeignScan(ForeignScanState * node, int eflags)
 static TupleTableSlot *
 obliviousIterateForeignScan(ForeignScanState * node)
 {
-
-
 	OblivScanState* fsstate = (OblivScanState *) node->fdw_state;
 
     TupleTableSlot *tupleSlot;
-	bool nextRowFound = false;
+	bool nextRowFound = true;
 	tupleSlot = node->ss.ss_ScanTupleSlot;
 
-    if(teste == 1){
+    if(single_row != 0){
         return ExecClearTuple(tupleSlot);
 
     }
 	elog(DEBUG1, "Going to read tuple in function getTuple");
-	nextRowFound = getTuple(fsstate);
+	if(test == HEAP_ACCESS_TEST){
+		#ifndef UNSAFE
+			getTupleTID(enclave_id, blkno, offnum, (char*) &(fsstate->tuple) ,tupleLen);
+		#else
+			getTupleTID(blkno, offnum, (char*) &(fsstate->tuple) ,tupleLen);
+		#endif
+		single_row = 1;
+	}
 
 	if (nextRowFound)
 	{
 		ExecStoreTuple(&(fsstate->tuple), tupleSlot, InvalidBuffer, false);
 	}
-    teste = 1;
 	return tupleSlot;
 }
 
@@ -477,12 +590,17 @@ obliviousExecForeignInsert(EState * estate,
 {
 
 
-	elog(DEBUG1, "In obliviousExecForeignInsert");
 
-	ResultRelInfo *resultRelInfo = NULL;
-	Relation	resultRelationDesc = NULL;
+	ResultRelInfo* resultRelInfo;
+	Relation	resultRelationDesc;
 	HeapTuple	tuple;
+	TransactionId xid;
+	sgx_status_t status;
+	status = SGX_SUCCESS;
+	resultRelInfo = NULL;
+	resultRelationDesc = NULL;
 
+	elog(DEBUG1, "In obliviousExecForeignInsert");
 
 	/*
      * get the heap tuple out of the tuple table slot, making sure we have a
@@ -492,13 +610,38 @@ obliviousExecForeignInsert(EState * estate,
 
 	resultRelInfo = estate->es_result_relation_info;
 	resultRelationDesc = resultRelInfo->ri_RelationDesc;
-	TransactionId xid = GetCurrentTransactionId();
+	xid = GetCurrentTransactionId();
 
     //The function heap_prepar_insert is copied from heapam.c as it is a private function.
 	tuple = heap_prepare_insert(resultRelationDesc, tuple, xid, estate->es_output_cid, 0);
-    elog(DEBUG1, "Inserting new tuple on oblivous relation");
+    tupleLen = tuple->t_len;
 
-    insertTuple(RelationGetRelationName(resultRelationDesc), (Item) tuple->t_data, tuple->t_len);
+    elog(DEBUG1, "Inserting tuple with ecall that has size %d", tupleLen);
+    if(test == HEAP_ACCESS_TEST){
+
+    	elog(DEBUG1, "Heap Access Test with tuple of size %d", tuple->t_len);
+
+    	#ifdef UNSAFE
+    	   insertHeap((char*) tuple->t_data, tuple->t_len);
+    	#else
+    		status = insertHeap(enclave_id, (char*) tuple->t_data, tuple->t_len);
+    	#endif
+
+    	if(status != SGX_SUCCESS){
+    		elog(DEBUG1, "tuple insertion on heap was not successful!");
+    	}
+
+    }else{
+
+    	#ifdef UNSAFE
+    		insert((char*) tuple->t_data, tuple->t_len);
+    	#else
+    		insert(enclave_id, (char*) tuple->t_data, tuple->t_len);
+
+    	#endif
+
+    }
+    /*insertTuple(RelationGetRelationName(resultRelationDesc), (Item) tuple->t_data, tuple->t_len);*/
 
 	elog(DEBUG1, "out of obliviousExecForeignInsert");
 	return slot;

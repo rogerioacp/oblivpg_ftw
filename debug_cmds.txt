@@ -1,3 +1,5 @@
+# LLDB
+
 > lldb
 
 # Attach to process
@@ -26,3 +28,20 @@ frame variable x
 
 (lldb) p (char*) list_head(colNamesInfo)->data.ptr_value
 (char *) $3 = 0x0000000106e35484 "email"
+
+
+# GDB
+
+> gdb
+
+# attach to process
+
+attach pid
+
+#set breakpoint on a funciton
+
+b init_soe
+
+c -> continue
+n -> next
+s -> step into

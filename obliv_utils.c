@@ -20,7 +20,6 @@
 
 #include "include/obliv_utils.h"
 
-
 #include "catalog/catalog.h"
 #include "catalog/pg_class_d.h"
 #include "storage/lockdefs.h"

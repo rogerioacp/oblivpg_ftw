@@ -1,18 +1,22 @@
 # contrib/oblivpg_fdw/Makefile
 
 MODULE_big = oblivpg_fdw
-OBJS = obliv_utils.o obliv_status.o obliv_soe.o obliv_ofile.o oblivpg_fdw.o
+OBJS = obliv_utils.o obliv_status.o oblivpg_fdw.o obliv_ocalls.o
 
-SHLIB_LINK = -loram $(GLIB_LIB)
+ifeq ($(UNSAFE), 1)
+	SOE_LIB = -lsoeus
+else
+	SOE_LIB = -lsoeu $(SGX_LIB) 
+endif
+
+SHLIB_LINK = -loram -lcollectc $(ENCLAVE_LIB) $(SOE_LIB)
 
 
 EXTENSION = oblivpg_fdw
-#DATA =  oblivpg_fdw--unpackaged--1.0.sql
 
 DATA = oblivpg_fdw--1.0.sql
 PGFILEDESC = "oblivpg_fdw - foreign data wrapper for oblivious access"
 
-#PG_CPPFLAGS= -I/usr/local/include
 
 PG_CONFIG = pg_config
 PGXS := $(shell $(PG_CONFIG) --pgxs)

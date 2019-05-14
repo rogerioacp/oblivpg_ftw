@@ -45,12 +45,12 @@ typedef struct FdwOblivTableStatus
 	Oid			tableRelFileNode;
 
 	/**
-	 *  The table mirror relation id.
+	 *  The mirror table relation id.
 	 **/
 	Oid 	relTableMirrorId;
 
 	/**
-	 * The index mirror relation Id.
+	 * The mirror index relation Id.
 	 **/
 	Oid			relIndexMirrorId;
 
