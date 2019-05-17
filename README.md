@@ -127,4 +127,9 @@ select log_special_pointer();
 
 INSERT INTO ftw_users (id, name, age, gender, email) values (1, 'teste', 20, 1, 'teste');
 
+#block offset, page item offset
+select set_row(0,1);
+
+select * from ftw_users;
+
 ```

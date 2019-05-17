@@ -15,8 +15,6 @@
 #include <string.h>
 
 #include "include/obliv_status.h"
-//#include "include/obliv_heap_manager.h"
-//#include "include/obliv_soe.h"
 #include "include/obliv_utils.h"
 #include "include/oblivpg_fdw.h"
 #include "include/obliv_ofile.h"
@@ -108,7 +106,7 @@ extern void _PG_fini(void);
 PG_FUNCTION_INFO_V1(init_soe);
 PG_FUNCTION_INFO_V1(log_special_pointer);
 PG_FUNCTION_INFO_V1(open_enclave);
-PG_FUNCTION_INFO_V1(set_row);
+PG_FUNCTION_INFO_V1(set_next);
 PG_FUNCTION_INFO_V1(close_enclave);
 
 
@@ -125,16 +123,14 @@ PG_FUNCTION_INFO_V1(close_enclave);
 
 #define HEAP_ACCESS_TEST 1
 #define INDEX_ACCESS_TEST 2
+
 int test;
-int single_row = 0;
+char* key = NULL;
 
 #ifndef UNSAFE
 sgx_enclave_id_t  enclave_id = 0;
 #endif
-// Pointer to row to access during HEAP_ACCESS_TEST
-BlockNumber blkno;
-OffsetNumber offnum;
-uint32 tupleLen;
+
 
 /**
  * Postgres initialization function which is called immediately after the an
@@ -302,10 +298,13 @@ Datum open_enclave(PG_FUNCTION_ARGS) {
 }
 
 
-Datum set_row(PG_FUNCTION_ARGS) {
-	blkno = PG_GETARG_UINT32(0);
-	offnum = PG_GETARG_UINT32(1);
+Datum set_next(PG_FUNCTION_ARGS) {
+	
+	key = (char*) palloc(strlen("NEXT")+1);
+	memcpy(key, "NEXT", strlen("NEXT")+1);
+
 	PG_RETURN_VOID();
+
 }
 
 Datum close_enclave(PG_FUNCTION_ARGS) {
@@ -487,7 +486,7 @@ obliviousBeginForeignScan(ForeignScanState * node, int eflags)
             fsstate->indexTupdesc = NULL;
             fsstate->query = NULL;
             fsstate->working_cxt = NULL;
-            fsstate->tupleHeader = (HeapTupleHeader) malloc(MAX_TUPLE_SIZE);
+            fsstate->tupleHeader = (HeapTupleHeader) palloc(MAX_TUPLE_SIZE);
             memset(fsstate->tupleHeader, 0, MAX_TUPLE_SIZE);
             node->fdw_state = (void *) fsstate;
 			//fsstate->table = heap_open(oStatus.relTableMirrorId,  AccessShareLock);
@@ -509,13 +508,12 @@ obliviousIterateForeignScan(ForeignScanState * node)
 	OblivScanState* fsstate = (OblivScanState *) node->fdw_state;
 
     TupleTableSlot *tupleSlot;
-	bool nextRowFound = true;
+	int rowFound = 0;
 	tupleSlot = node->ss.ss_ScanTupleSlot;
 
-    if(single_row != 0){
-        return ExecClearTuple(tupleSlot);
+   
+    int len = 5;
 
-    }
 	elog(DEBUG1, "Going to read tuple in function getTuple");
 	if(test == HEAP_ACCESS_TEST){
 
@@ -523,20 +521,30 @@ obliviousIterateForeignScan(ForeignScanState * node)
 		* The real tuple header size is set inside of the enclave on the
 		* HeapTupleData strut in the field t_len;
 		*/
-		#ifndef UNSAFE
+		/*#ifndef UNSAFE
 		getTupleTID(enclave_id, blkno, offnum, (char*) &(fsstate->tuple), sizeof(HeapTupleData), (char*) fsstate->tupleHeader, MAX_TUPLE_SIZE);
 		#else
 			getTupleTID(blkno, offnum, (char*) &(fsstate->tuple) ,sizeof(HeapTupleData),
 				(char*) fsstate->tupleHeader, MAX_TUPLE_SIZE);
 		#endif
-		single_row = 1;
+		single_row = 1;*/
+
+		#ifndef UNSAFE
+		rowFound = getTuple(enclave_id, key, len , (char*) &(fsstate->tuple), sizeof(HeapTupleData), (char*) fsstate->tupleHeader, MAX_TUPLE_SIZE);
+		#else
+		rowFound = getTuple(key, len, (char*) &(fsstate->tuple), sizeof(HeapTupleData), (char*) fsstate->tupleHeader, MAX_TUPLE_SIZE);
+		#endif
 		fsstate->tuple.t_data = fsstate->tupleHeader;
 	}
 
-	if (nextRowFound)
+	if (rowFound == 0)
 	{
 		ExecStoreTuple(&(fsstate->tuple), tupleSlot, InvalidBuffer, false);
+	}else{
+		//Reached the end of available tuples
+        return ExecClearTuple(tupleSlot);
 	}
+
 	return tupleSlot;
 }
 
@@ -548,6 +556,7 @@ obliviousEndForeignScan(ForeignScanState * node)
     OblivScanState *fsstate;
 
     fsstate = (OblivScanState *) node->fdw_state;
+    pfree(fsstate->tupleHeader);
     pfree(fsstate);
 }
 
@@ -627,9 +636,8 @@ obliviousExecForeignInsert(EState * estate,
 
     //The function heap_prepar_insert is copied from heapam.c as it is a private function.
 	tuple = heap_prepare_insert(resultRelationDesc, tuple, xid, estate->es_output_cid, 0);
-    tupleLen = tuple->t_len;
 
-    //elog(DEBUG1, "Inserting tuple with ecall that has size %d", tupleLen);
+    //elog(DEBUG1, "Inserting tuple with ecall that has size %d", tuple->t_len);
     if(test == HEAP_ACCESS_TEST){
 
     	//elog(DEBUG1, "Heap Access Test with tuple of size %d", tuple->t_len);

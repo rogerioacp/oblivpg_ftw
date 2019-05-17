@@ -17,7 +17,12 @@ EXTENSION = oblivpg_fdw
 DATA = oblivpg_fdw--1.0.sql
 PGFILEDESC = "oblivpg_fdw - foreign data wrapper for oblivious access"
 
+REGRESS = heap_insert
+
+#REGRESS_OPTS = --dlpath=/usr/local/lib/soe 
 
 PG_CONFIG = pg_config
 PGXS := $(shell $(PG_CONFIG) --pgxs)
 include $(PGXS)
+
+

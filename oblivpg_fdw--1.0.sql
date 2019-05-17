@@ -32,9 +32,9 @@ RETURNS int4
 AS 'MODULE_PATHNAME', 'open_enclave'
 LANGUAGE C STRICT;
 
-CREATE FUNCTION set_row(int4, int4)
+CREATE FUNCTION set_next()
 RETURNS void
-AS 'MODULE_PATHNAME', 'set_row'
+AS 'MODULE_PATHNAME', 'set_next'
 LANGUAGE C STRICT;
 
 CREATE FUNCTION close_enclave()
