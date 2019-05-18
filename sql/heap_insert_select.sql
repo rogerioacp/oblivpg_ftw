@@ -2053,3 +2053,5 @@ INSERT INTO ftw_users (id, name, age, gender, email) values (2000,'Corney',69,0,
 select set_next();
 
 select * from ftw_users;
+
+select close_enclave();

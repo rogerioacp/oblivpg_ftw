@@ -17,7 +17,7 @@
 #include "include/obliv_status.h"
 #include "include/obliv_utils.h"
 #include "include/oblivpg_fdw.h"
-#include "include/obliv_ofile.h"
+#include "include/obliv_ocalls.h"
 
 #include "access/htup.h"
 #include "access/htup_details.h"
@@ -308,6 +308,8 @@ Datum set_next(PG_FUNCTION_ARGS) {
 }
 
 Datum close_enclave(PG_FUNCTION_ARGS) {
+	elog(DEBUG1, "close enclave received");
+
 	#ifndef UNSAFE
 		sgx_status_t status;
 		status = sgx_destroy_enclave(enclave_id);
@@ -320,8 +322,11 @@ Datum close_enclave(PG_FUNCTION_ARGS) {
 		elog(DEBUG1, "Enclave destroyed");
 		PG_RETURN_INT32(status);
    #else
+		elog(DEBUG1, "Requested enclave destruction");
+		closeSoe();
 		PG_RETURN_INT32(0);
    #endif
+	closeOblivStatus();
 }
 
 
@@ -506,13 +511,15 @@ static TupleTableSlot *
 obliviousIterateForeignScan(ForeignScanState * node)
 {
 	OblivScanState* fsstate = (OblivScanState *) node->fdw_state;
-
     TupleTableSlot *tupleSlot;
-	int rowFound = 0;
-	tupleSlot = node->ss.ss_ScanTupleSlot;
 
-   
-    int len = 5;
+    int len;
+	int rowFound = 0;
+	
+
+	tupleSlot = node->ss.ss_ScanTupleSlot;
+	len = 5;
+
 
 	elog(DEBUG1, "Going to read tuple in function getTuple");
 	if(test == HEAP_ACCESS_TEST){

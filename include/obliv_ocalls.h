@@ -10,6 +10,8 @@
 void setupOblivStatus(FdwOblivTableStatus instatus, const char* tableName, const char* indexName);
 void initHashIndex(const char* filename,  const char* pages, unsigned int nblocks, unsigned int blockSize);
 void initRelation(const char* filename,  const char* pages, unsigned int nblocks, unsigned int blockSize);
-void logSpecialPointerData();
+
+void closeOblivStatus(void);
+
 #endif //FDW_OBLIV_OFILE_H
 

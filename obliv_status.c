@@ -104,6 +104,8 @@ getOblivTableStatus(Oid ftwOid, Relation rel)
 	}
 	else
 	{
+		heap_endscan(scan);
+		UnregisterSnapshot(snapshot);
 		/**
 		 * Throw error to warn user that there must be a valid tuple with information about the oblivous foreign table.
 		 **/

@@ -2049,3 +2049,5 @@ INSERT INTO ftw_users (id, name, age, gender, email) values (1997,'Estelle',70,0
 INSERT INTO ftw_users (id, name, age, gender, email) values (1998,'Rita',98,1,'rangoverp@google.cn');
 INSERT INTO ftw_users (id, name, age, gender, email) values (1999,'Tanhya',4,0,'thallerrq@eventbrite.com');
 INSERT INTO ftw_users (id, name, age, gender, email) values (2000,'Corney',69,0,'cabraminorr@ow.ly');
+
+select close_enclave();

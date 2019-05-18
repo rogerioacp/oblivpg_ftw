@@ -39,7 +39,7 @@ LANGUAGE C STRICT;
 
 CREATE FUNCTION close_enclave()
 RETURNS int4
-AS 'MODULE_PATHNAME', 'open_enclave'
+AS 'MODULE_PATHNAME', 'close_enclave'
 LANGUAGE C STRICT;
 
 

@@ -17,7 +17,7 @@ EXTENSION = oblivpg_fdw
 DATA = oblivpg_fdw--1.0.sql
 PGFILEDESC = "oblivpg_fdw - foreign data wrapper for oblivious access"
 
-REGRESS = heap_insert
+REGRESS = heap_insert_small heap_insert_select_small heap_insert heap_insert_select
 
 #REGRESS_OPTS = --dlpath=/usr/local/lib/soe 
 

@@ -11,7 +11,7 @@
 #include "include/obliv_page.h"
 #include "include/oblivpg_fdw.h"
 #include "include/obliv_status.h"
-#include "include/obliv_ofile.h"
+#include "include/obliv_ocalls.h"
 
 #ifndef UNSAFE
 #include "Enclave_u.h"
@@ -46,11 +46,15 @@ void setupOblivStatus(FdwOblivTableStatus instatus, const char* tbName, const ch
     status.indexNBlocks = instatus.indexNBlocks;
     status.tableNBlocks = instatus.tableNBlocks;
 
-    tableName = (char*) malloc(strlen(tbName)+1);
-    indexName = (char*) malloc(strlen(idName)+1);
+    tableName = (char*) palloc(strlen(tbName)+1);
+    indexName = (char*) palloc(strlen(idName)+1);
     memcpy(tableName, tbName, strlen(tbName) + 1);
     memcpy(indexName, idName, strlen(idName) + 1);
 
+}
+void closeOblivStatus(){
+  pfree(tableName);
+  pfree(indexName);
 }
 
 /**
@@ -210,8 +214,8 @@ outFileInit(const char* filename, const char* pages,  unsigned int nblocks, unsi
     }else{
 	    ereport(ERROR,
             (errcode(ERRCODE_UNDEFINED_OBJECT),
-                    errmsg("Enclave requested a file initialization for %s that is not supported",
-                           filename)));
+                    errmsg("Enclave requested a file initialization for %s, %s, %s that is not supported",
+                           filename, tableName, indexName)));
     }
 
     #ifdef UNSAFE
@@ -229,7 +233,6 @@ sgx_status_t
 outFileRead(char* page, const char* filename, int blkno, int pageSize)
 {
 
-    //elog(DEBUG1, "out file read %d of page size %d", blkno, pageSize);
     Relation rel;
     Buffer buffer;
   	Page heapPage;
@@ -237,6 +240,8 @@ outFileRead(char* page, const char* filename, int blkno, int pageSize)
   	Oid targetTable;
     //OblivPageOpaque oopaque;
 
+
+    //elog(DEBUG1, "out file read %d of page size %d", blkno, pageSize);
 
     if(strcmp(filename, tableName) == 0)
     {
@@ -312,15 +317,18 @@ sgx_status_t
 #endif
 outFileWrite(const char* page, const char* filename, int blkno, int pageSize)
 {
-    //elog(DEBUG1, "out file write %d of pageSize %d", blkno, pageSize);
 
-	Relation rel;
+	  Relation rel;
     Page heapPage;
-    Buffer buffer = 0;
+    Buffer buffer;
     bool isIndex;
     Oid targetTable;
-   // OblivPageOpaque oopaque;
+    //OblivPageOpaque oopaque;
     //OblivPageOpaque oopaqueOriginal;
+
+    buffer=0;
+
+    //elog(DEBUG1, "out file write %d of pageSize %d", blkno, pageSize);
 
     //oopaqueOriginal = (OblivPageOpaque) PageGetSpecialPointer(page);
     //elog(DEBUG1, "Original block has blkno %d", oopaqueOriginal->o_blkno);
@@ -407,3 +415,5 @@ outFileClose(const char* filename){
     return SGX_SUCCESS;
     #endif
 }
+
+

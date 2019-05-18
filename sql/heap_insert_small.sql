@@ -70,9 +70,4 @@ INSERT INTO ftw_users (id, name, age, gender, email) values (18,'Georgie',56,1,'
 INSERT INTO ftw_users (id, name, age, gender, email) values (1999,'Tanhya',4,0,'thallerrq@eventbrite.com');
 INSERT INTO ftw_users (id, name, age, gender, email) values (2000,'Corney',69,0,'cabraminorr@ow.ly');
 
-
-select set_next();
-
-select * from ftw_users;
-
 select close_enclave();
