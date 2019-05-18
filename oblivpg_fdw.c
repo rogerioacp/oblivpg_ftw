@@ -308,7 +308,6 @@ Datum set_next(PG_FUNCTION_ARGS) {
 }
 
 Datum close_enclave(PG_FUNCTION_ARGS) {
-	elog(DEBUG1, "close enclave received");
 
 	#ifndef UNSAFE
 		sgx_status_t status;
@@ -319,14 +318,14 @@ Datum close_enclave(PG_FUNCTION_ARGS) {
 			PG_RETURN_INT32(status);
 		}
 
-		elog(DEBUG1, "Enclave destroyed");
 		PG_RETURN_INT32(status);
    #else
-		elog(DEBUG1, "Requested enclave destruction");
 		closeSoe();
 		PG_RETURN_INT32(0);
    #endif
 	closeOblivStatus();
+	elog(DEBUG1, "Enclave destroyed");
+
 }
 
 
@@ -528,16 +527,8 @@ obliviousIterateForeignScan(ForeignScanState * node)
 		* The real tuple header size is set inside of the enclave on the
 		* HeapTupleData strut in the field t_len;
 		*/
-		/*#ifndef UNSAFE
-		getTupleTID(enclave_id, blkno, offnum, (char*) &(fsstate->tuple), sizeof(HeapTupleData), (char*) fsstate->tupleHeader, MAX_TUPLE_SIZE);
-		#else
-			getTupleTID(blkno, offnum, (char*) &(fsstate->tuple) ,sizeof(HeapTupleData),
-				(char*) fsstate->tupleHeader, MAX_TUPLE_SIZE);
-		#endif
-		single_row = 1;*/
-
 		#ifndef UNSAFE
-		rowFound = getTuple(enclave_id, key, len , (char*) &(fsstate->tuple), sizeof(HeapTupleData), (char*) fsstate->tupleHeader, MAX_TUPLE_SIZE);
+		getTuple(enclave_id, &rowFound, key, len , (char*) &(fsstate->tuple), sizeof(HeapTupleData), (char*) fsstate->tupleHeader, MAX_TUPLE_SIZE);
 		#else
 		rowFound = getTuple(key, len, (char*) &(fsstate->tuple), sizeof(HeapTupleData), (char*) fsstate->tupleHeader, MAX_TUPLE_SIZE);
 		#endif
