@@ -20,21 +20,9 @@ RETURNS int4
 AS 'MODULE_PATHNAME', 'init_soe'
 LANGUAGE C STRICT;
 
-
-CREATE FUNCTION log_special_pointer()
-RETURNS int4
-AS 'MODULE_PATHNAME', 'log_special_pointer'
-LANGUAGE C STRICT;
-
-
 CREATE FUNCTION open_enclave()
 RETURNS int4
 AS 'MODULE_PATHNAME', 'open_enclave'
-LANGUAGE C STRICT;
-
-CREATE FUNCTION set_next()
-RETURNS void
-AS 'MODULE_PATHNAME', 'set_next'
 LANGUAGE C STRICT;
 
 CREATE FUNCTION close_enclave()
@@ -55,10 +43,10 @@ CREATE SERVER obliv FOREIGN DATA WRAPPER oblivpg_fdw;
 
 create table users(
 	id integer,
-	name character(50),
+	name char(50),
 	age integer,
 	gender smallint,
-	email character(35)
+	email char(35)
 );
 
 create index user_email on users using hash (email);
@@ -75,8 +63,8 @@ create table obl_ftw(
 
 CREATE FOREIGN TABLE ftw_users(
 	id integer,
-	name character(50),
+	name char(50),
 	age integer,
 	gender smallint,
-	email character(35)
+	email char(35)
 ) SERVER obliv;

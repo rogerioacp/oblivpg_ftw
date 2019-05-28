@@ -29,11 +29,16 @@
 #include "catalog/pg_namespace_d.h"
 #include "commands/explain.h"
 #include "foreign/fdwapi.h"
+#include "utils/builtins.h"
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
 #include "optimizer/pathnode.h"
 #include "optimizer/planmain.h"
 #include "executor/tuptable.h"
+#include "nodes/nodes.h"
+#include "nodes/primnodes.h"
+#include "optimizer/clauses.h"
+#include "optimizer/restrictinfo.h"
 
 /**
  * SGX includes
@@ -46,6 +51,8 @@
 #else
 #include "Enclave_dt.h"
 #endif
+
+#include "ops.h"
 
 
 /**
@@ -106,7 +113,6 @@ extern void _PG_fini(void);
 PG_FUNCTION_INFO_V1(init_soe);
 PG_FUNCTION_INFO_V1(log_special_pointer);
 PG_FUNCTION_INFO_V1(open_enclave);
-PG_FUNCTION_INFO_V1(set_next);
 PG_FUNCTION_INFO_V1(close_enclave);
 
 
@@ -121,11 +127,8 @@ PG_FUNCTION_INFO_V1(close_enclave);
 
 #define ENCLAVE_LIB "/usr/local/lib/soe/libsoe.signed.so"
 
-#define HEAP_ACCESS_TEST 1
-#define INDEX_ACCESS_TEST 2
 
-int test;
-char* key = NULL;
+int opmode;
 
 #ifndef UNSAFE
 sgx_enclave_id_t  enclave_id = 0;
@@ -184,6 +187,9 @@ static bool obliviousIsForeignScanParallelSafe(PlannerInfo * root,
 								   RelOptInfo * rel,
 								   RangeTblEntry * rte);
 
+//Helper function
+static  int getindexColumn(Oid oTable);
+
 
 Datum init_soe(PG_FUNCTION_ARGS){
 
@@ -202,8 +208,17 @@ Datum init_soe(PG_FUNCTION_ARGS){
     char* mirrorTableRelationName;
     char* mirrorIndexRelationName;
 
+    Oid hashFunctionOID;
+    //unsigned int indexedColumn;
+
+    TupleDesc indexTupleDesc;
+	FormData_pg_attribute attrDesc;
+
+	//unsigned int tupleDescLength;
+	unsigned int attrDescLength;
+
  	oid = PG_GETARG_OID(0); //Foreign table wrapper oid
-    test = PG_GETARG_UINT32(1); // Test run or deployment
+    opmode = PG_GETARG_UINT32(1); // Test run or deployment
 
     status = SGX_SUCCESS;
     mappingMemoryContext = AllocSetContextCreate(CurrentMemoryContext, "Obliv Mapping Table",  ALLOCSET_DEFAULT_SIZES);
@@ -213,21 +228,36 @@ Datum init_soe(PG_FUNCTION_ARGS){
     if (mappingOid != InvalidOid) {
 
         oblivMappingRel = heap_open(mappingOid, RowShareLock);
-        elog(DEBUG1, "GetOblivTableStatus");
         
         oStatus = getOblivTableStatus(oid, oblivMappingRel);
-        elog(DEBUG1, "Open Mirror relation table");
 
         mirrorHeapTable = heap_open(oStatus.relTableMirrorId, NoLock);
         mirrorTableRelationName = RelationGetRelationName(mirrorHeapTable);
-        elog(DEBUG1, "Open Mirror index table");
 
         mirrorIndexTable = index_open(oStatus.relIndexMirrorId, NoLock);
-        elog(DEBUG1, "Get index Name");
         mirrorIndexRelationName = RelationGetRelationName(mirrorIndexTable);
 
+
+        /* Fetch the oid of the functions that manipulate the indexed 
+        * columns data types. In the current prototype this is the
+        * function used to hash a given value. The system's default functions
+        * for the database datatypes are defined in fmgroids.h. This values
+        * are also in the catalog table pg_proc.
+        */
+
+        //Only works with hash indexes with a single column.
+        hashFunctionOID = mirrorIndexTable->rd_support[0];
+        indexTupleDesc = RelationGetDescr(mirrorIndexTable);
+        attrDesc = indexTupleDesc->attrs[0];
+        //tupleDescLength = sizeof(struct tupleDesc);
+        attrDescLength = sizeof(FormData_pg_attribute);
+
+        //Fetch the column number of the indexed tuple
+        //indexedColumn = mirrorIndexTable->rd_index->indkey.values[0];
+
         setupOblivStatus(oStatus, mirrorTableRelationName, mirrorIndexRelationName);
-        elog(DEBUG1, "Initializing SOE in enclave");
+
+        elog(DEBUG1, "Initializing SOE");
 
         #ifndef UNSAFE
         status = initSOE(enclave_id, 
@@ -236,14 +266,20 @@ Datum init_soe(PG_FUNCTION_ARGS){
         		oStatus.tableNBlocks, 
         		oStatus.indexNBlocks, 
         		oStatus.relTableMirrorId, 
-        		oStatus.relIndexMirrorId);
+        		oStatus.relIndexMirrorId,
+        		(unsigned int) hashFunctionOID,
+        		(char*) &attrDesc,
+        		attrDescLength);
         #else
         	initSOE(mirrorTableRelationName, 
         		mirrorIndexRelationName, 
         		oStatus.tableNBlocks, 
         		oStatus.indexNBlocks, 
         		oStatus.relTableMirrorId, 
-        		oStatus.relIndexMirrorId);
+        		oStatus.relIndexMirrorId,
+        		(unsigned int) hashFunctionOID,
+        		(char*) &attrDesc,
+        		attrDescLength);
         #endif
         if(status != SGX_SUCCESS){
         	elog(DEBUG1, "SOE initialization failed");
@@ -284,7 +320,7 @@ Datum open_enclave(PG_FUNCTION_ARGS) {
 
 	    if(SGX_SUCCESS != status)
 	    {
-	    	elog(DEBUG1, "Enclave was not created. Return error %d", status);
+	    	elog(ERROR, "Enclave was not created. Return error %d", status);
 	    	sgx_destroy_enclave(enclave_id);
 	    	PG_RETURN_INT32(status);
 
@@ -295,16 +331,6 @@ Datum open_enclave(PG_FUNCTION_ARGS) {
 	#else
     	PG_RETURN_INT32(0);
     #endif
-}
-
-
-Datum set_next(PG_FUNCTION_ARGS) {
-	
-	key = (char*) palloc(strlen("NEXT")+1);
-	memcpy(key, "NEXT", strlen("NEXT")+1);
-
-	PG_RETURN_VOID();
-
 }
 
 Datum close_enclave(PG_FUNCTION_ARGS) {
@@ -436,8 +462,17 @@ obliviousGetForeignPlan(PlannerInfo * root,
 						Plan * outer_plan)
 {
 	ForeignScan *foreignScan = NULL;
-
-	foreignScan = make_foreignscan(tlist,  NIL, baserel->relid, NIL,NIL, NIL, NIL, NULL) ;
+	/*
+	* TODO: A future implementation might iterate over the scan_clauses 
+	* list and filter any clause that is not going to be processed by the fdw.
+	* The current prototype assumes simple queries with a single clause with
+	* the following syntax:
+	*  ... where colname op value
+	*/
+	scan_clauses = extract_actual_clauses(scan_clauses,
+										 false); /* extract regular clauses */
+	
+	foreignScan = make_foreignscan(tlist, scan_clauses, baserel->relid, NIL,NIL, NIL, NIL, NULL) ;
 
 	return foreignScan;
 
@@ -446,25 +481,34 @@ obliviousGetForeignPlan(PlannerInfo * root,
 static void
 obliviousBeginForeignScan(ForeignScanState * node, int eflags)
 {
+
 	/**On the stream execution, this function should check if the necessary resources are initiated
 	 *
 	 *  enclave
 	 *  constant rate thread
 	 *
 	 *
-	 *  For now, this code follows the same logic as the sequential scan on the postgres code
+	 *  For now, this code follows a similar logic as the sequential scan on the postgres code
 	 *  (nodeSeqscan.c -> ExecInitSeqScan).
 	 */
 
 	OblivScanState *fsstate;
 	Relation oblivFDWTable;
-	Ostatus		obliv_status;
+	Ostatus	obliv_status;
 
 	FdwOblivTableStatus oStatus;
 	Relation oblivMappingRel;
-	Oid			mappingOid;
-	//char* relationName;
+	Oid mappingOid;
+	List* scan_clauses;
 
+
+	ListCell *l;
+	//Oid	opno;
+	Datum scanValue;
+	Expr *clause;
+	Expr *leftop;		/* expr on lhs of operator */
+	Expr *rightop;	/* expr on rhs ... */
+	//AttrNumber	varattno;	/* att number used in scan */
 
 	/*
 	 * Do nothing in EXPLAIN (no ANALYZE) case.  node->fdw_state stays NULL.
@@ -477,63 +521,101 @@ obliviousBeginForeignScan(ForeignScanState * node, int eflags)
 	mappingOid = get_relname_relid(OBLIV_MAPPING_TABLE_NAME, PG_PUBLIC_NAMESPACE);
 
 	if (mappingOid != InvalidOid){
+		//List of qualifier that will be evaluated by the fdw.
+		scan_clauses = ((ForeignScan *) node->ss.ps.plan)->scan.plan.qual;
+
+		fsstate = (OblivScanState *) palloc0(sizeof(OblivScanState));
+
+
+		/**
+		 * The logic to parse and obtain the necessary scan clauses values follows
+		 * the function create_indescan_plan(createplan.c) and the 
+		 * ExecIndexBuildScanKeys(nodeIndexscan.c).
+		 *
+		**/
+		//For the prototype we are assuming a where clause with a single operator.
+		foreach(l, scan_clauses){
+			clause = lfirst(l);
+			if(IsA(clause, OpExpr)){
+				elog(DEBUG1, "Operation expression");
+				//opno = ((OpExpr *) clause)->opno;
+				//opfuncid = ((OpExpr *) clause)->opfuncid;
+
+				leftop = (Expr *) get_leftop(clause);
+				
+				if (leftop && IsA(leftop, RelabelType))
+					leftop = ((RelabelType *) leftop)->arg;
+
+				//varattno = ((Var *) leftop)->varattno;
+
+				rightop = (Expr *) get_rightop(clause);
+
+				if(IsA(rightop, Const)){
+	 				scanValue = ((Const *) rightop)->constvalue;
+	 				fsstate->searchValue = VARDATA_ANY(DatumGetBpCharPP(scanValue));
+					fsstate->searchValueSize = bpchartruelen(VARDATA_ANY(DatumGetBpCharPP(scanValue)), VARSIZE_ANY_EXHDR(DatumGetBpCharPP(scanValue)));
+				}
+
+			}else{
+		    	elog(ERROR, "Expression not supported");
+
+			}
+		}
+
+
 		oblivMappingRel = heap_open(mappingOid, AccessShareLock);
 		oStatus = getOblivTableStatus(oblivFDWTable->rd_id, oblivMappingRel);
 		oStatus.tableRelFileNode = oblivFDWTable->rd_id;
 		obliv_status = validateIndexStatus(oStatus);
 
-		//if(obliv_status == OBLIVIOUS_INITIALIZED){
-		    elog(DEBUG1, "initializing fsstate %d", obliv_status);
-			fsstate = (OblivScanState *) palloc0(sizeof(OblivScanState));
-            fsstate->mirrorIndex = NULL;
-            fsstate->mirrorTable = NULL;
-            fsstate->indexTupdesc = NULL;
-            fsstate->query = NULL;
-            fsstate->working_cxt = NULL;
-            fsstate->tupleHeader = (HeapTupleHeader) palloc(MAX_TUPLE_SIZE);
-            memset(fsstate->tupleHeader, 0, MAX_TUPLE_SIZE);
-            node->fdw_state = (void *) fsstate;
-			//fsstate->table = heap_open(oStatus.relTableMirrorId,  AccessShareLock);
-			//fsstate->index = heap_open(oStatus.indexRelFileNode, AccessShareLock);
-			//fsstate->tableTupdesc = RelationGetDescr(node->ss.ss_currentRelation);
-		//}
+		elog(DEBUG1, "initializing fsstate %d", obliv_status);
+
+		node->fdw_state = (void *) fsstate;
+		fsstate->tupleHeader = (HeapTupleHeader) palloc(MAX_TUPLE_SIZE);
+		memset(fsstate->tupleHeader, 0, MAX_TUPLE_SIZE);
+		fsstate->mirrorTable = heap_open(oStatus.relTableMirrorId,  AccessShareLock);
+		fsstate->tableTupdesc = RelationGetDescr(fsstate->mirrorTable);
 		heap_close(oblivMappingRel, AccessShareLock);
-		/*relationName = RelationGetRelationName(oblivFDWTable);
-		initSOE(relationName, (size_t) oStatus.tableNBlocks, 1);
-		pfree(relationName);*/
-
-
 	}
 }
 
 static TupleTableSlot *
 obliviousIterateForeignScan(ForeignScanState * node)
 {
-	OblivScanState* fsstate = (OblivScanState *) node->fdw_state;
+	int len;
+	char* key;
+	int rowFound;
+	//int indexedColumn;
+	OblivScanState* fsstate;
     TupleTableSlot *tupleSlot;
 
-    int len;
-	int rowFound = 0;
-	
-
+	fsstate = (OblivScanState *) node->fdw_state;;
 	tupleSlot = node->ss.ss_ScanTupleSlot;
-	len = 5;
-
 
 	elog(DEBUG1, "Going to read tuple in function getTuple");
-	if(test == HEAP_ACCESS_TEST){
-
-		/**
-		* The real tuple header size is set inside of the enclave on the
-		* HeapTupleData strut in the field t_len;
+	if(opmode == PRODUCTION_MODE){
+		key = fsstate->searchValue;
+		len = fsstate->searchValueSize;
+	}else{ 
+		
+		/* In test mode the key is not used, and the SOE does a 
+		* sequential scan on the heap relation 
 		*/
-		#ifndef UNSAFE
-		getTuple(enclave_id, &rowFound, key, len , (char*) &(fsstate->tuple), sizeof(HeapTupleData), (char*) fsstate->tupleHeader, MAX_TUPLE_SIZE);
-		#else
-		rowFound = getTuple(key, len, (char*) &(fsstate->tuple), sizeof(HeapTupleData), (char*) fsstate->tupleHeader, MAX_TUPLE_SIZE);
-		#endif
-		fsstate->tuple.t_data = fsstate->tupleHeader;
+		key = NULL;
+		len = 0;
 	}
+
+	elog(DEBUG1, "Going to search key %s with size %d", key, len);
+	/**
+	* The real tuple header size is set inside of the enclave on the
+	* HeapTupleData strut in the field t_len;
+	*/
+	#ifdef UNSAFE
+		rowFound = getTuple(opmode, key, len, (char*) &(fsstate->tuple), sizeof(HeapTupleData), (char*) fsstate->tupleHeader, MAX_TUPLE_SIZE);
+	#else
+		getTuple(enclave_id, &rowFound, opmode, key, len , (char*) &(fsstate->tuple), sizeof(HeapTupleData), (char*) fsstate->tupleHeader, MAX_TUPLE_SIZE);
+	#endif
+	fsstate->tuple.t_data = fsstate->tupleHeader;
 
 	if (rowFound == 0)
 	{
@@ -547,13 +629,13 @@ obliviousIterateForeignScan(ForeignScanState * node)
 }
 
 
-
 static void
 obliviousEndForeignScan(ForeignScanState * node)
 {
     OblivScanState *fsstate;
 
     fsstate = (OblivScanState *) node->fdw_state;
+    heap_close(fsstate->mirrorTable, AccessShareLock);
     pfree(fsstate->tupleHeader);
     pfree(fsstate);
 }
@@ -595,8 +677,36 @@ static void obliviousBeginForeignModify(ModifyTableState * mtstate,
                                         int subplan_index, int eflags)
                                         {
 
-   // init_soe(rinfo->ri_RelationDesc->rd_id);
 }
+
+
+int getindexColumn(Oid oTable){
+	Oid	mappingOid;
+    FdwOblivTableStatus oStatus;
+
+    Relation oblivMappingRel;
+    Relation  mirrorIndexTable;
+
+    int indexedColumn;
+
+	mappingOid = get_relname_relid(OBLIV_MAPPING_TABLE_NAME, PG_PUBLIC_NAMESPACE);
+
+   oblivMappingRel = heap_open(mappingOid, RowShareLock);
+
+	oStatus = getOblivTableStatus(oTable, oblivMappingRel);
+
+    mirrorIndexTable = index_open(oStatus.relIndexMirrorId, NoLock);
+
+    // the current prototype assumes a single indexed column
+    indexedColumn = mirrorIndexTable->rd_index->indkey.values[0];
+
+    index_close(mirrorIndexTable, NoLock);
+    heap_close(oblivMappingRel, RowShareLock);
+
+    return indexedColumn;
+}
+
+
 
 /**
  *  The logic of this function of accessing the relation, tuple and other information to store a tuple was
@@ -616,9 +726,16 @@ obliviousExecForeignInsert(EState * estate,
 	HeapTuple	tuple;
 	TransactionId xid;
 	sgx_status_t status;
-	status = SGX_SUCCESS;
+
+    int indexedColumn;
+    Datum indexedValueDatum;
+    bool isColumnNull;
+    char* indexValue;
+    int indexValueSize;
+
 	resultRelInfo = NULL;
 	resultRelationDesc = NULL;
+	status = SGX_SUCCESS;
 
 	elog(DEBUG1, "In obliviousExecForeignInsert");
 
@@ -635,8 +752,9 @@ obliviousExecForeignInsert(EState * estate,
     //The function heap_prepar_insert is copied from heapam.c as it is a private function.
 	tuple = heap_prepare_insert(resultRelationDesc, tuple, xid, estate->es_output_cid, 0);
 
-    //elog(DEBUG1, "Inserting tuple with ecall that has size %d", tuple->t_len);
-    if(test == HEAP_ACCESS_TEST){
+	
+
+    if(opmode == TEST_MODE){
 
     	//elog(DEBUG1, "Heap Access Test with tuple of size %d", tuple->t_len);
 
@@ -652,10 +770,41 @@ obliviousExecForeignInsert(EState * estate,
 
     }else{
 
+    	indexedColumn = getindexColumn(resultRelationDesc->rd_id);
+
+
+		indexedValueDatum = heap_getattr(tuple, indexedColumn, RelationGetDescr(resultRelationDesc), &isColumnNull);
+
+		/**
+		 * Currently, for development, we are assuming that the indexed attribute 
+		 * is a fixed size char (e.g.: char(50)). when data is encrypted on 
+		 * the client side and sent to the server, its going to be a binary
+		 * data type.  for the binary data type look to the functions 
+		 * toast_raw_datum_size and byteane to understand how to handle and 
+		 * get the size of the binary array.
+		 */
+
+		/* LER! TODO!
+			Funções de calcular a hash para diferentes Data Types.
+
+			O data type bytes calcula a hash na função hashvarlena.
+
+			O data type varlen calcula a hash com o hashtext.
+
+			O data type char de tamanho fixo (e.g. char(50)) calcula a hash com a função hashbpchar.
+
+		*/
+
+		indexValue = VARDATA_ANY(DatumGetBpCharPP(indexedValueDatum));
+		indexValueSize = bpchartruelen(VARDATA_ANY(DatumGetBpCharPP(indexedValueDatum)), VARSIZE_ANY_EXHDR(DatumGetBpCharPP(indexedValueDatum)));
+		//indexValue = DatumGetCString(indexedValueDatum);
+		//indexValueSize =  strlen(indexValue)+1;
+
+		//elog(DEBUG1, "Datum to index is %s and has size %d", indexValue, indexValueSize);
     	#ifdef UNSAFE
-    		insert((char*) tuple->t_data, tuple->t_len);
+    		insert((char*) tuple->t_data, tuple->t_len, indexValue, indexValueSize);
     	#else
-    		insert(enclave_id, (char*) tuple->t_data, tuple->t_len);
+    		insert(enclave_id, (char*) tuple->t_data, tuple->t_len, indexValue, indexValueSize);
 
     	#endif
 
@@ -665,3 +814,5 @@ obliviousExecForeignInsert(EState * estate,
 	elog(DEBUG1, "out of obliviousExecForeignInsert");
 	return slot;
 }
+
+

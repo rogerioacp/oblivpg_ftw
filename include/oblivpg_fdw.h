@@ -19,16 +19,8 @@ typedef struct OblivScanState{
 
 
     Relation mirrorTable; /*relchache entry for the mirror table*/
-    Relation mirrorIndex; /*relcache entry for the mirror index*/
-
     TupleDesc tableTupdesc; /* table tuple descriptor for scan */
-    TupleDesc indexTupdesc; /* index tuple descriptor for scan*/
 
-    char      *query; /* text of SELECT command */
-
-
-   // HeapScanDesc ss_currentScanDesc;
-   // TupleTableSlot *ss_ScanTupleSlot;
 
     /* for storing result tuples
      *
@@ -36,13 +28,9 @@ typedef struct OblivScanState{
      **/
     HeapTupleData tuple;			/* array of currently-retrieved tuples */
     HeapTupleHeader tupleHeader;    /* Temporary Tuple Header location*/
-    //int			num_tuples;		/* # of tuples in array */
-    //int			next_tuple;		/* index of next one to return */
 
-
-    /* working memory context */
-    MemoryContext working_cxt;	    /*Possible memory context that wil be used */
-
+	char* searchValue;  //currently we are assuming saerchees over char types. Encrypted blocks
+	int   searchValueSize; //The size of the encryptedBlock.
 
 } OblivScanState;
 

@@ -19,6 +19,17 @@
 #include "Enclave_dt.h"
 #endif
 
+typedef struct SoeHashPageOpaqueData
+{
+  BlockNumber hasho_prevblkno;  /* see above */
+  BlockNumber hasho_nextblkno;  /* see above */
+  Bucket    hasho_bucket; /* bucket number this pg belongs to */
+  uint16    hasho_flag;   /* page type code + flag bits, see above */
+  uint16    hasho_page_id;  /* for identification of hash indexes */
+  int o_blkno; /* real block number or Dummy Block*/
+} SoeHashPageOpaqueData;
+
+typedef SoeHashPageOpaqueData *SoeHashPageOpaque;
 
 #include "oram/plblock.h"
 
@@ -31,7 +42,6 @@ char* indexName;
 
 void oc_logger(const char *str)
 {
-
     elog(DEBUG1, "%s", str);
 }
 
@@ -71,12 +81,15 @@ void closeOblivStatus(){
 * sees fit.  The hash within the enclave works with a virtual index file 
 * abstraction that maps the enclave pages to the index relation pages 
 * pre-allocated in this procedure.
-*
 */
 void initHashIndex(const char* filename, const char* pages, unsigned int nblocks, unsigned int blockSize){
 
 	Relation rel;
-	BlockNumber blkno;
+	//BlockNumber blkno;
+  int offset = 0;
+  Buffer buffer = 0;
+  Page page = NULL;
+  //SoeHashPageOpaque oopaque;
 
 	//elog(DEBUG1, "Initializing oblivious hash index file for relation %s, index OID %u, with a total of %u blocks  of size %u bytes", filename,  status.relIndexMirrorId, nblocks, blockSize);
 
@@ -84,29 +97,61 @@ void initHashIndex(const char* filename, const char* pages, unsigned int nblocks
 
 		rel = index_open(status.relIndexMirrorId, ExclusiveLock);
 
-		RelationOpenSmgr(rel);
-		/*
-		* The Hash table _hash_alloc_buckets function extends the relation by
-		* only writing the last page of a single splitpoint in the index 
-		* relation and assuming that the underlying file system fills the space
-		* between the relation last page and the new splitploint page with 
-		* zeros.
-		* For instance if an index page has 4 blocks, and the hash is extended 
-		* to have 8 blocks, the original function only writes the page 8 to the
-		* relation file. The blocks from 4 to 8 are assumed to be all zeros 
-		* initialized by the File System.
-		*
-		* This implementation drops the assumptions and writes a page for every
-		* single block. This ensures that every block is correctly initialized
-		* and provides a consistent set of empty pages that the enclave hash
-		* index can use.
-		*/
-		for(blkno = 0; blkno < nblocks; blkno++){
+    do{
 
-			smgrextend(rel->rd_smgr, MAIN_FORKNUM, blkno, (char*) pages + (blkno*BLCKSZ), false);
-		}
+      /**
+       * when the index is initialized by the database the first four blocks
+       * already exist and have some defined data.  we override this blocks
+       * to be initialized by the soe blocks.
+       **/
+      if(offset < 4){
+        buffer = ReadBuffer(rel, offset);
+      }else{
+        buffer = ReadBuffer(rel, P_NEW);
+      }
+      /**
+       * Buffers are not being locked as this extension is not 
+       * considering concurrent accesses to the
+       * relations. It might raise some unexpected errors if the
+       * postgres implementation checks if buffers
+       * have pins or locks associated.
+       **/
 
-		index_close(rel, ExclusiveLock);
+       page =  BufferGetPage(buffer);
+       //oopaque = (SoeHashPageOpaque) PageGetSpecialPointer(page);
+    
+       memcpy(page, pages + (offset*BLCKSZ), blockSize);
+      
+       if(PageGetPageSize(page) != blockSize){
+              ereport(ERROR,
+                (errcode(ERRCODE_UNDEFINED_OBJECT),
+                        errmsg("Page sizes does not match %zu", PageGetPageSize(page))));
+
+        }
+
+
+        /*
+        * We mark all the new buffers dirty, but do nothing to write
+        * them out; they'll probably get used soon, and even if they
+        * are not, a crash will leave an okay all-zeroes page on disk.
+        */
+        MarkBufferDirty(buffer);
+
+        /**
+         * The original function RelationAdddExtraBlocks updates the
+         * free space map of the relation but this function does not. 
+         * The free space map is not updated for now and
+         *  must be considered if it can be used at all since it keeps
+         * track in plaintext how much
+         * space is free in each relation block. Only use the fsm if 
+         * it's really necessary for the prototype.
+         */
+        ReleaseBuffer(buffer);
+
+        offset+=1;
+   }while(offset < nblocks);
+
+   index_close(rel, ExclusiveLock);
 
 	} else {
         ereport(ERROR,
@@ -239,7 +284,7 @@ outFileRead(char* page, const char* filename, int blkno, int pageSize)
     bool isIndex;
   	Oid targetTable;
     //OblivPageOpaque oopaque;
-
+    //SoeHashPageOpaque oopaque;
 
     //elog(DEBUG1, "out file read %d of page size %d", blkno, pageSize);
 
@@ -262,10 +307,11 @@ outFileRead(char* page, const char* filename, int blkno, int pageSize)
 	if(targetTable != InvalidOid){
 
 		if(isIndex){
-            rel = index_open(targetTable, RowExclusiveLock);
-        }else{
-            rel =  heap_open(targetTable, RowExclusiveLock);
-		}
+      //elog(DEBUG1, "Going to open index relation");
+      rel = index_open(targetTable, RowExclusiveLock);
+    }else{
+      rel =  heap_open(targetTable, RowExclusiveLock);
+    }
 
 	     /**
 	     * Buffers are not being locked as this extension is not 
@@ -286,8 +332,8 @@ outFileRead(char* page, const char* filename, int blkno, int pageSize)
 
         memcpy(page, heapPage, pageSize);
        
-        //oopaque = (OblivPageOpaque) PageGetSpecialPointer(page);
-        //elog(DEBUG1, "Read block number %d which has real block %d", blkno,oopaque->o_blkno);
+        //oopaque = (SoeHashPageOpaque) PageGetSpecialPointer(heapPage);
+        //elog(DEBUG1, "Read block number %d which has real block %d with flag %d", blkno,oopaque->o_blkno, oopaque->hasho_flag);
         ReleaseBuffer(buffer);
 
         if(isIndex){
@@ -352,10 +398,10 @@ outFileWrite(const char* page, const char* filename, int blkno, int pageSize)
     if(status.relTableMirrorId != InvalidOid){
 
 		if(isIndex){
-            rel = index_open(targetTable, RowExclusiveLock);
+      //elog(DEBUG1, "Going to open index");
+      rel = index_open(targetTable, RowExclusiveLock);
 		}else{
-            rel =  heap_open(targetTable, RowExclusiveLock);
-
+      rel =  heap_open(targetTable, RowExclusiveLock);
 		}
 
         buffer = ReadBuffer(rel, blkno);
