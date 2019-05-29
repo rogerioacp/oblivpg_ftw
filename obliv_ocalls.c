@@ -19,6 +19,8 @@
 #include "Enclave_dt.h"
 #endif
 
+#include "oram/plblock.h"
+
 typedef struct SoeHashPageOpaqueData
 {
   BlockNumber hasho_prevblkno;  /* see above */
@@ -31,7 +33,6 @@ typedef struct SoeHashPageOpaqueData
 
 typedef SoeHashPageOpaqueData *SoeHashPageOpaque;
 
-#include "oram/plblock.h"
 
 
 #define SOE_CONTEXT "SOE_CONTEXT"

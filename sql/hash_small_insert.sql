@@ -64,10 +64,7 @@ INSERT INTO ftw_users (id, name, age, gender, email) values (12,'Derron',62,1,'d
 INSERT INTO ftw_users (id, name, age, gender, email) values (13,'Berkley',12,0,'basipenkoc@usda.gov');
 INSERT INTO ftw_users (id, name, age, gender, email) values (14,'Saundra',63,1,'schampleyd@narod.ru');
 INSERT INTO ftw_users (id, name, age, gender, email) values (15,'Tess',98,0,'tmitrovice@virginia.edu');
-INSERT INTO ftw_users (id, name, age, gender, email) values (16,'Orlan',52,1,'obottenf@wordpress.org');
-INSERT INTO ftw_users (id, name, age, gender, email) values (17,'Drusilla',61,0,'dhucknallg@cisco.com');
-INSERT INTO ftw_users (id, name, age, gender, email) values (18,'Georgie',56,1,'gadmansh@so-net.ne.jp');
-INSERT INTO ftw_users (id, name, age, gender, email) values (1999,'Tanhya',4,0,'thallerrq@eventbrite.com');
-INSERT INTO ftw_users (id, name, age, gender, email) values (2000,'Corney',69,0,'cabraminorr@ow.ly');
+
+select * from ftw_users where email='schampleyd@narod.ru';
 
 select close_enclave();

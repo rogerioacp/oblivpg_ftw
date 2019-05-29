@@ -592,7 +592,7 @@ obliviousIterateForeignScan(ForeignScanState * node)
 	fsstate = (OblivScanState *) node->fdw_state;;
 	tupleSlot = node->ss.ss_ScanTupleSlot;
 
-	elog(DEBUG1, "Going to read tuple in function getTuple");
+	//elog(DEBUG1, "Going to read tuple in function getTuple");
 	if(opmode == PRODUCTION_MODE){
 		key = fsstate->searchValue;
 		len = fsstate->searchValueSize;
@@ -605,7 +605,7 @@ obliviousIterateForeignScan(ForeignScanState * node)
 		len = 0;
 	}
 
-	elog(DEBUG1, "Going to search key %s with size %d", key, len);
+	//elog(DEBUG1, "Going to search key %s with size %d", key, len);
 	/**
 	* The real tuple header size is set inside of the enclave on the
 	* HeapTupleData strut in the field t_len;
