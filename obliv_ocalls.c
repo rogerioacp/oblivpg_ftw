@@ -13,6 +13,8 @@
 #include "include/obliv_status.h"
 #include "include/obliv_ocalls.h"
 
+#include "utils/fmgroids.h"
+
 #ifndef UNSAFE
 #include "Enclave_u.h"
 #else
@@ -40,6 +42,7 @@ typedef SoeHashPageOpaqueData *SoeHashPageOpaque;
 FdwOblivTableStatus status;
 char* tableName;
 char* indexName;
+Oid ihOID;
 
 void oc_logger(const char *str)
 {
@@ -48,7 +51,7 @@ void oc_logger(const char *str)
 
 
 
-void setupOblivStatus(FdwOblivTableStatus instatus, const char* tbName, const char* idName){
+void setupOblivStatus(FdwOblivTableStatus instatus, const char* tbName, const char* idName, Oid indexHandlerOID){
     //elog(DEBUG1, "setup obliv status");
     status.relTableMirrorId = instatus.relTableMirrorId;
     status.relIndexMirrorId = instatus.relIndexMirrorId;
@@ -57,6 +60,7 @@ void setupOblivStatus(FdwOblivTableStatus instatus, const char* tbName, const ch
     status.indexNBlocks = instatus.indexNBlocks;
     status.tableNBlocks = instatus.tableNBlocks;
 
+    ihOID = indexHandlerOID;
     tableName = (char*) palloc(strlen(tbName)+1);
     indexName = (char*) palloc(strlen(idName)+1);
     memcpy(tableName, tbName, strlen(tbName) + 1);
@@ -102,10 +106,14 @@ void initHashIndex(const char* filename, const char* pages, unsigned int nblocks
 
       /**
        * when the index is initialized by the database the first four blocks
-       * already exist and have some defined data.  we override this blocks
+       * of an Hash index already exist and have some defined data. 
+       * we override this blocks
        * to be initialized by the soe blocks.
        **/
-      if(offset < 4){
+      if(ihOID == F_HASHHANDLER && offset < 4){
+        buffer = ReadBuffer(rel, offset);
+      }else if(ihOID ==  F_BTHANDLER && offset == 0){
+        /*When the btree index is created, block 0 is initated and has content*/
         buffer = ReadBuffer(rel, offset);
       }else{
         buffer = ReadBuffer(rel, P_NEW);

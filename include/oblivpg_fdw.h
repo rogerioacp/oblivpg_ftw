@@ -32,6 +32,8 @@ typedef struct OblivScanState{
 	char* searchValue;  //currently we are assuming saerchees over char types. Encrypted blocks
 	int   searchValueSize; //The size of the encryptedBlock.
 
+    Oid   opno;
+
 } OblivScanState;
 
 #endif //OBLIVPG_FDW_H

@@ -91,12 +91,12 @@ getOblivTableStatus(Oid ftwOid, Relation rel)
 		if(!isTableNBlocksNull) {
 			//iStatus.tableNBlocks = DatumGetInt32(dTableNBlocks);
 			tableNBlocks = DatumGetInt32(dTableNBlocks);
-			elog(DEBUG1, "number of table blocks %d", tableNBlocks);
+			//elog(DEBUG1, "number of table blocks %d", tableNBlocks);
 			iStatus.tableNBlocks = tableNBlocks;
 		}
 		if(!isIndexNBlocksNull){
 			indexNBlocks = DatumGetInt32(dIndexNBlocks);
-			elog(DEBUG1, "number of index blocks %d", indexNBlocks);
+			//elog(DEBUG1, "number of index blocks %d", indexNBlocks);
 			iStatus.indexNBlocks = indexNBlocks;
 		}
 		if(!isInitNull)

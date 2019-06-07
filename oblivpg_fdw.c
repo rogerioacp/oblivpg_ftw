@@ -209,6 +209,7 @@ Datum init_soe(PG_FUNCTION_ARGS){
     char* mirrorIndexRelationName;
 
     Oid hashFunctionOID;
+    Oid indexHandlerOID;
     //unsigned int indexedColumn;
 
     TupleDesc indexTupleDesc;
@@ -251,11 +252,12 @@ Datum init_soe(PG_FUNCTION_ARGS){
         attrDesc = indexTupleDesc->attrs[0];
         //tupleDescLength = sizeof(struct tupleDesc);
         attrDescLength = sizeof(FormData_pg_attribute);
-
+        indexHandlerOID = mirrorIndexTable->rd_amhandler;
+        elog(DEBUG1, "rd_amhandler is %d ", indexHandlerOID);
         //Fetch the column number of the indexed tuple
         //indexedColumn = mirrorIndexTable->rd_index->indkey.values[0];
 
-        setupOblivStatus(oStatus, mirrorTableRelationName, mirrorIndexRelationName);
+        setupOblivStatus(oStatus, mirrorTableRelationName, mirrorIndexRelationName, indexHandlerOID);
 
         elog(DEBUG1, "Initializing SOE");
 
@@ -268,6 +270,7 @@ Datum init_soe(PG_FUNCTION_ARGS){
         		oStatus.relTableMirrorId, 
         		oStatus.relIndexMirrorId,
         		(unsigned int) hashFunctionOID,
+        		(unsigned int) indexHandlerOID,
         		(char*) &attrDesc,
         		attrDescLength);
         #else
@@ -278,11 +281,12 @@ Datum init_soe(PG_FUNCTION_ARGS){
         		oStatus.relTableMirrorId, 
         		oStatus.relIndexMirrorId,
         		(unsigned int) hashFunctionOID,
+        		(unsigned int) indexHandlerOID,
         		(char*) &attrDesc,
         		attrDescLength);
         #endif
         if(status != SGX_SUCCESS){
-        	elog(DEBUG1, "SOE initialization failed");
+        	elog(ERROR, "SOE initialization failed %d ", status);
         }
 
         heap_close(mirrorHeapTable, NoLock);
@@ -494,7 +498,7 @@ obliviousBeginForeignScan(ForeignScanState * node, int eflags)
 
 	OblivScanState *fsstate;
 	Relation oblivFDWTable;
-	Ostatus	obliv_status;
+	//Ostatus	obliv_status;
 
 	FdwOblivTableStatus oStatus;
 	Relation oblivMappingRel;
@@ -503,7 +507,7 @@ obliviousBeginForeignScan(ForeignScanState * node, int eflags)
 
 
 	ListCell *l;
-	//Oid	opno;
+	Oid	opno;
 	Datum scanValue;
 	Expr *clause;
 	Expr *leftop;		/* expr on lhs of operator */
@@ -526,7 +530,6 @@ obliviousBeginForeignScan(ForeignScanState * node, int eflags)
 
 		fsstate = (OblivScanState *) palloc0(sizeof(OblivScanState));
 
-
 		/**
 		 * The logic to parse and obtain the necessary scan clauses values follows
 		 * the function create_indescan_plan(createplan.c) and the 
@@ -537,8 +540,8 @@ obliviousBeginForeignScan(ForeignScanState * node, int eflags)
 		foreach(l, scan_clauses){
 			clause = lfirst(l);
 			if(IsA(clause, OpExpr)){
-				elog(DEBUG1, "Operation expression");
-				//opno = ((OpExpr *) clause)->opno;
+				//elog(DEBUG1, "Operation expression");
+				opno = ((OpExpr *) clause)->opno;
 				//opfuncid = ((OpExpr *) clause)->opfuncid;
 
 				leftop = (Expr *) get_leftop(clause);
@@ -555,7 +558,7 @@ obliviousBeginForeignScan(ForeignScanState * node, int eflags)
 	 				fsstate->searchValue = VARDATA_ANY(DatumGetBpCharPP(scanValue));
 					fsstate->searchValueSize = bpchartruelen(VARDATA_ANY(DatumGetBpCharPP(scanValue)), VARSIZE_ANY_EXHDR(DatumGetBpCharPP(scanValue)));
 				}
-
+				fsstate->opno = opno;
 			}else{
 		    	elog(ERROR, "Expression not supported");
 
@@ -566,9 +569,9 @@ obliviousBeginForeignScan(ForeignScanState * node, int eflags)
 		oblivMappingRel = heap_open(mappingOid, AccessShareLock);
 		oStatus = getOblivTableStatus(oblivFDWTable->rd_id, oblivMappingRel);
 		oStatus.tableRelFileNode = oblivFDWTable->rd_id;
-		obliv_status = validateIndexStatus(oStatus);
+		validateIndexStatus(oStatus);
 
-		elog(DEBUG1, "initializing fsstate %d", obliv_status);
+		//elog(DEBUG1, "initializing fsstate %d", obliv_status);
 
 		node->fdw_state = (void *) fsstate;
 		fsstate->tupleHeader = (HeapTupleHeader) palloc(MAX_TUPLE_SIZE);
@@ -611,9 +614,9 @@ obliviousIterateForeignScan(ForeignScanState * node)
 	* HeapTupleData strut in the field t_len;
 	*/
 	#ifdef UNSAFE
-		rowFound = getTuple(opmode, key, len, (char*) &(fsstate->tuple), sizeof(HeapTupleData), (char*) fsstate->tupleHeader, MAX_TUPLE_SIZE);
+		rowFound = getTuple(opmode, fsstate->opno, key, len, (char*) &(fsstate->tuple), sizeof(HeapTupleData), (char*) fsstate->tupleHeader, MAX_TUPLE_SIZE);
 	#else
-		getTuple(enclave_id, &rowFound, opmode, key, len , (char*) &(fsstate->tuple), sizeof(HeapTupleData), (char*) fsstate->tupleHeader, MAX_TUPLE_SIZE);
+		getTuple(enclave_id, &rowFound, opmode, fsstate->opno, key, len , (char*) &(fsstate->tuple), sizeof(HeapTupleData), (char*) fsstate->tupleHeader, MAX_TUPLE_SIZE);
 	#endif
 	fsstate->tuple.t_data = fsstate->tupleHeader;
 
@@ -737,7 +740,7 @@ obliviousExecForeignInsert(EState * estate,
 	resultRelationDesc = NULL;
 	status = SGX_SUCCESS;
 
-	elog(DEBUG1, "In obliviousExecForeignInsert");
+	//elog(DEBUG1, "In obliviousExecForeignInsert");
 
 	/*
      * get the heap tuple out of the tuple table slot, making sure we have a
@@ -811,7 +814,7 @@ obliviousExecForeignInsert(EState * estate,
     }
     /*insertTuple(RelationGetRelationName(resultRelationDesc), (Item) tuple->t_data, tuple->t_len);*/
 
-	elog(DEBUG1, "out of obliviousExecForeignInsert");
+	//elog(DEBUG1, "out of obliviousExecForeignInsert");
 	return slot;
 }
 

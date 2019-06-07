@@ -49,7 +49,9 @@ create table users(
 	email char(35)
 );
 
-create index user_email on users using hash (email);
+/*create index user_email on users using hash (email);*/
+
+create index user_email on users using btree (email);
 
 
 create table obl_ftw(
