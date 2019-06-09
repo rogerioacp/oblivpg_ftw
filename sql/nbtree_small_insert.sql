@@ -547,6 +547,6 @@ INSERT INTO ftw_users (id, name, age, gender, email) values(4364,'Fleurette',29,
 INSERT INTO ftw_users (id, name, age, gender, email) values(4365,'Barbaraanne',11,0,'bguslona4@deviantart.com');
 
 
-select * from ftw_users where email>='ckleinlerera2@hao123.com';
+select * from ftw_users where email='ckleinlerera2@hao123.com';
 
 select close_enclave();

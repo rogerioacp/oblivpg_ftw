@@ -131,12 +131,12 @@ void initHashIndex(const char* filename, const char* pages, unsigned int nblocks
     
        memcpy(page, pages + (offset*BLCKSZ), blockSize);
       
-       if(PageGetPageSize(page) != blockSize){
+       /*if(PageGetPageSize(page) != blockSize){
               ereport(ERROR,
                 (errcode(ERRCODE_UNDEFINED_OBJECT),
                         errmsg("Page sizes does not match %zu", PageGetPageSize(page))));
 
-        }
+        }*/
 
 
         /*
@@ -210,12 +210,12 @@ void initRelation(const char* filename, const char* pages, unsigned int nblocks,
   
                memcpy(page, pages + (offset*BLCKSZ), blockSize);
 
-               if(PageGetPageSize(page) != blockSize){
+              /* if(PageGetPageSize(page) != blockSize){
                       ereport(ERROR,
                         (errcode(ERRCODE_UNDEFINED_OBJECT),
                                 errmsg("Page sizes does not match %zu", PageGetPageSize(page))));
 
-                }
+                }*/
 
 
                 /*
@@ -332,12 +332,12 @@ outFileRead(char* page, const char* filename, int blkno, int pageSize)
         buffer = ReadBuffer(rel,  blkno);
         heapPage = BufferGetPage(buffer);
 
-       if(PageGetPageSize(heapPage) != pageSize){
+      /* if(PageGetPageSize(heapPage) != pageSize){
             ereport(ERROR,
                 (errcode(ERRCODE_UNDEFINED_OBJECT),
                     errmsg("Page sizes do not match %zu, %d", PageGetPageSize(heapPage), pageSize)));
 
-       }
+       }*/
 
         memcpy(page, heapPage, pageSize);
        
@@ -424,12 +424,12 @@ outFileWrite(const char* page, const char* filename, int blkno, int pageSize)
          **/
         heapPage = BufferGetPage(buffer);
 
-		if(PageGetPageSize(heapPage) != pageSize){
+		/*if(PageGetPageSize(heapPage) != pageSize){
 			ereport(ERROR,
 				(errcode(ERRCODE_UNDEFINED_OBJECT),
                     errmsg("Page sizes do not match %zu, %d", PageGetPageSize(heapPage), pageSize)));
 
-       }
+       }*/
 
         memcpy(heapPage, page, pageSize);
 

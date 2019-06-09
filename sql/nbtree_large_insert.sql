@@ -10051,7 +10051,7 @@ INSERT INTO ftw_users (id, name, age, gender, email) values(9999,'Shannah',66,0,
 INSERT INTO ftw_users (id, name, age, gender, email) values(10000,'Sioux',32,0,'skerslakerr@mashable.com');
 
 /*select * from ftw_users where email='edack1@over-blog.com';*/
-select * from ftw_users where email>='ckleinlerera2@hao123.com';
+/*select * from ftw_users where email>='ckleinlerera2@hao123.com';*/
 
 
-select close_enclave();
+/*select close_enclave();*/
