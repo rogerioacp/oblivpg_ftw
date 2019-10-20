@@ -22,6 +22,7 @@
 #include "access/htup.h"
 #include "access/htup_details.h"
 #include "access/tuptoaster.h"
+#include "access/nbtree.h"
 #include "catalog/catalog.h"
 
 #include "postgres.h"
@@ -39,6 +40,8 @@
 #include "nodes/primnodes.h"
 #include "optimizer/clauses.h"
 #include "optimizer/restrictinfo.h"
+
+#include <collectc/queue.h>
 
 /**
  * SGX includes
@@ -114,6 +117,7 @@ PG_FUNCTION_INFO_V1(init_soe);
 PG_FUNCTION_INFO_V1(log_special_pointer);
 PG_FUNCTION_INFO_V1(open_enclave);
 PG_FUNCTION_INFO_V1(close_enclave);
+PG_FUNCTION_INFO_V1(transverse_tree);
 
 
 /* Default CPU cost to start up a foreign query. */
@@ -123,7 +127,7 @@ PG_FUNCTION_INFO_V1(close_enclave);
 #define DEFAULT_OBLIV_FDW_TOTAL_COST	100.0
 
 /* Predefined max tuple size for sgx to copy the real tuple to*/
-#define MAX_TUPLE_SIZE 200
+#define MAX_TUPLE_SIZE 300
 
 #define ENCLAVE_LIB "/usr/local/lib/soe/libsoe.signed.so"
 
@@ -335,6 +339,158 @@ Datum open_enclave(PG_FUNCTION_ARGS) {
 	#else
     	PG_RETURN_INT32(0);
     #endif
+}
+
+typedef struct BTQueueData{
+	unsigned int level;
+	BlockNumber bts_parent_blkno;
+	OffsetNumber bts_offnum;
+	BlockNumber bts_bn_entry;
+} BTQueueData;
+
+typedef BTQueueData *BTQData;
+
+Datum transverse_tree(PG_FUNCTION_ARGS) {
+	Relation irel;
+	Oid indexOID = PG_GETARG_OID(0);
+	BTQData queue_data = NULL;
+	void *qblock;
+	Buffer bufp;
+	int queue_stat;
+	Queue  *queue;
+	bool isroot = true;
+	unsigned int max_height = 0;
+	unsigned int cb_height = 0;
+	unsigned int nblocks_level = 0;
+	unsigned int level_offset = 0;
+	unsigned int nblocks_level_next = 0;
+
+	irel = index_open(indexOID, ExclusiveLock);
+
+	elog(DEBUG1, "Going to create queue");
+
+	queue_stat = queue_new(&queue);
+
+	if(queue_stat != CC_OK){
+		// TODO: Log error and abort.
+        elog(ERROR, " queue initialization failed");
+	} 
+	elog(DEBUG1, "Going to get root oid %d", indexOID);
+	/*Get the root page to start with */
+	bufp = _bt_getroot(irel, BT_READ);
+
+	elog(DEBUG1, "Root is in buffer %d", bufp);
+	//The three has not been created and does not have a root
+	//if(!BufferIsValid(*bufp))
+		/**/
+
+
+	queue_data = (BTQData) palloc(sizeof(BTQueueData));
+	queue_data->bts_parent_blkno = InvalidBlockNumber; //IS ROOT
+	// the root is not the offset of any other block.
+	queue_data->bts_offnum = InvalidOffsetNumber; 
+	queue_data->bts_bn_entry = 0;// We consider root to be on the first block.
+	queue_data->level = 0;
+
+	queue_enqueue(queue, queue_data);
+
+
+	//Breadth first tree transversal
+	while(queue_poll(queue, &qblock) != CC_ERR_OUT_OF_RANGE){
+		Page page;
+		//current queue (cq) data
+		BTQData cq_data = NULL;
+		BTPageOpaque opaque;
+		OffsetNumber offnum;
+		ItemId itemid;
+		IndexTuple itup;
+		BlockNumber blkno;
+		BlockNumber par_blkno;
+		OffsetNumber low,
+					 high;
+
+
+		BTQData cblock = (BTQData) qblock;
+
+		blkno = cblock->bts_bn_entry;
+
+		//ITS NOT A ROOT BLOCK
+		if(!isroot){
+			bufp = ReadBuffer(irel, cblock->bts_bn_entry);
+		}
+
+		page = BufferGetPage(bufp);
+		opaque = (BTPageOpaque) PageGetSpecialPointer(page);
+		blkno = BufferGetBlockNumber(bufp);
+		low = P_FIRSTDATAKEY(opaque);
+		high = PageGetMaxOffsetNumber(page);
+
+		elog(DEBUG1, "Page in blkno %d is root %d", blkno, P_ISROOT(opaque));
+		elog(DEBUG1, "Page in blkno %d is leaf %d", blkno, P_ISLEAF(opaque));
+		elog(DEBUG1, "low is %d and high is %d", low, high);
+		/*print the number of items in the page*/
+		// If there are no keys on the page, meaning there are tuples.
+		//if(high < low){
+			/*TODO*/
+		//}
+		//height+=1;
+		
+		par_blkno = BufferGetBlockNumber(bufp);
+		offnum = low;
+		if(!P_ISLEAF(opaque)){
+			while(offnum <= high){
+				//push elements to the stack  to be transversed on the next loop iteration.
+				// Get page offset on disk.
+
+				itemid = PageGetItemId(page, offnum);
+				itup = (IndexTuple) PageGetItem(page, itemid);
+				blkno = BTreeInnerTupleGetDownLink(itup);
+
+				cq_data = (BTQData) palloc(sizeof(BTQueueData));
+				cq_data->bts_offnum = offnum;
+				cq_data->bts_bn_entry = blkno;
+				cq_data->bts_parent_blkno = par_blkno;
+				elog(DEBUG1, "Parent %d - child offset %d with blkno %d", par_blkno, offnum, blkno);
+				//cq_data->level = height;
+				queue_enqueue(queue, cq_data);
+				offnum = OffsetNumberNext(offnum);
+			}
+		}
+		if(P_ISROOT(opaque)){
+			nblocks_level = high-low+1;
+			level_offset = 0;
+			cb_height +=1;
+			isroot = false;
+			max_height = Max(max_height, cb_height);
+		}else{
+			elog(DEBUG1, "1-level offset is  %d, nblocks_level %d, nblocks_level_next %d", level_offset, nblocks_level, nblocks_level_next);
+			if(level_offset == nblocks_level-1){
+				if(!P_ISLEAF(opaque)){
+					nblocks_level_next += (high-low+1);
+				}
+				nblocks_level = nblocks_level_next;
+				nblocks_level_next = 0;
+				cb_height += 1;
+				max_height = Max(max_height, cb_height);
+				level_offset = 0;
+			}else{
+				level_offset++;
+				if(!P_ISLEAF(opaque)){
+					nblocks_level_next += (high-low+1);
+				}
+			}			
+			elog(DEBUG1, "2-level offset is  %d, nblocks_level %d, nblocks_level_next %d", level_offset, nblocks_level, nblocks_level_next);
+
+		}
+		pfree(qblock);
+		ReleaseBuffer(bufp);
+	}
+
+
+	queue_destroy(queue);
+	index_close(irel, ExclusiveLock);
+
+	PG_RETURN_INT32(max_height);
 }
 
 Datum close_enclave(PG_FUNCTION_ARGS) {
