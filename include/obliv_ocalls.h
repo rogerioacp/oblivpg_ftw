@@ -8,7 +8,7 @@
 #include "obliv_status.h"
 
 void setupOblivStatus(FdwOblivTableStatus instatus, const char* tableName, const char* indexName, Oid indexHandlerOID);
-void initHashIndex(const char* filename,  const char* pages, unsigned int nblocks, unsigned int blockSize);
+void initIndex(const char* filename,  const char* pages, unsigned int nblocks, unsigned int blockSize, int initOffset);
 void initRelation(const char* filename,  const char* pages, unsigned int nblocks, unsigned int blockSize);
 
 void closeOblivStatus(void);
