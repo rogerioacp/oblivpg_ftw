@@ -2,8 +2,25 @@
 
 CREATE EXTENSION oblivpg_fdw;
 
-/*the extension creates an example table ftw_users.*/
+create table users(
+	id integer,
+	name char(50),
+	age integer,
+	gender smallint,
+	email char(35)
+);
 
+create index user_email on users using btree (email);
+
+CREATE FOREIGN TABLE ftw_users(
+	id integer,
+	name char(50),
+	age integer,
+	gender smallint,
+	email char(35)
+) SERVER obliv;
+
+/*the extension creates an example table ftw_users.*/
 CREATE FUNCTION update_mapping() RETURNS void AS 
 $$
 	DECLARE
