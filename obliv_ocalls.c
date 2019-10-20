@@ -87,13 +87,14 @@ void closeOblivStatus(){
 * abstraction that maps the enclave pages to the index relation pages 
 * pre-allocated in this procedure.
 */
-void initHashIndex(const char* filename, const char* pages, unsigned int nblocks, unsigned int blockSize){
+void initIndex(const char* filename, const char* pages, unsigned int nblocks, unsigned int blockSize, int initOffset){
 
 	Relation rel;
-	//BlockNumber blkno;
   int offset = 0;
   Buffer buffer = 0;
   Page page = NULL;
+
+  //BlockNumber blkno;
   //SoeHashPageOpaque oopaque;
 
 	//elog(DEBUG1, "Initializing oblivious hash index file for relation %s, index OID %u, with a total of %u blocks  of size %u bytes", filename,  status.relIndexMirrorId, nblocks, blockSize);
@@ -110,10 +111,14 @@ void initHashIndex(const char* filename, const char* pages, unsigned int nblocks
        * we override this blocks
        * to be initialized by the soe blocks.
        **/
-      if(ihOID == F_HASHHANDLER && offset < 4){
+      if(ihOID == F_HASHHANDLER && (initOffset+offset) < 4){
+        elog(DEBUG1, "Initiating speacial hash pages %d ", offset);
         buffer = ReadBuffer(rel, offset);
-      }else if(ihOID ==  F_BTHANDLER && offset == 0){
-        /*When the btree index is created, block 0 is initated and has content*/
+      }else if(ihOID ==  F_BTHANDLER && (initOffset+offset) == 0){
+        /**
+         *  When the btree index is created, block 0 is initiated and
+         *  has content that must be deleted.
+         */
         buffer = ReadBuffer(rel, offset);
       }else{
         buffer = ReadBuffer(rel, P_NEW);
@@ -255,7 +260,7 @@ void
 #else
 sgx_status_t
 #endif
-outFileInit(const char* filename, const char* pages,  unsigned int nblocks, unsigned int blocksize, int pageSize)
+outFileInit(const char* filename, const char* pages,  unsigned int nblocks, unsigned int blocksize, int pageSize, int initOffset)
 {   
 
     if(strcmp(filename, tableName) == 0)
@@ -264,7 +269,7 @@ outFileInit(const char* filename, const char* pages,  unsigned int nblocks, unsi
 
     }else if(strcmp(filename, indexName) == 0)
     {
-    	initHashIndex(filename, pages, nblocks, blocksize);
+    	initIndex(filename, pages, nblocks, blocksize, initOffset);
     }else{
 	    ereport(ERROR,
             (errcode(ERRCODE_UNDEFINED_OBJECT),
