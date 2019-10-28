@@ -15,14 +15,19 @@ RETURNS void
 AS 'MODULE_PATHNAME'
 LANGUAGE C STRICT;
 
-CREATE FUNCTION transverse_tree(oid)
+CREATE FUNCTION init_fsoe(int4, int4, oid)
 RETURNS int4
-AS 'MODULE_PATHNAME', 'transverse_tree'
+AS 'MODULE_PATHNAME', 'init_fsoe'
 LANGUAGE C STRICT;
 
 CREATE FUNCTION init_soe(int4, int4)
 RETURNS int4
 AS 'MODULE_PATHNAME', 'init_soe'
+LANGUAGE C STRICT;
+
+CREATE FUNCTION load_blocks(oid, oid)
+RETURNS int4
+AS 'MODULE_PATHNAME', 'load_blocks'
 LANGUAGE C STRICT;
 
 CREATE FUNCTION open_enclave()
