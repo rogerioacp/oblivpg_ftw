@@ -15,12 +15,7 @@ RETURNS void
 AS 'MODULE_PATHNAME'
 LANGUAGE C STRICT;
 
-CREATE FUNCTION init_fsoe(int4, int4, oid)
-RETURNS int4
-AS 'MODULE_PATHNAME', 'init_fsoe'
-LANGUAGE C STRICT;
-
-CREATE FUNCTION init_soe(int4, int4)
+CREATE FUNCTION init_soe(int4, oid, int4, oid)
 RETURNS int4
 AS 'MODULE_PATHNAME', 'init_soe'
 LANGUAGE C STRICT;
