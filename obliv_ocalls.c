@@ -50,6 +50,9 @@ void oc_logger(const char *str)
 }
 
 
+void print_status(){
+  elog(DEBUG1, "tableName is %s and indexName is %s ", tableName, indexName);
+}
 
 void setupOblivStatus(FdwOblivTableStatus instatus, const char* tbName, const char* idName, Oid indexHandlerOID){
     //elog(DEBUG1, "setup obliv status");
@@ -65,6 +68,9 @@ void setupOblivStatus(FdwOblivTableStatus instatus, const char* tbName, const ch
     indexName = (char*) palloc(strlen(idName)+1);
     memcpy(tableName, tbName, strlen(tbName) + 1);
     memcpy(indexName, idName, strlen(idName) + 1);
+    //elog(DEBUG1, "setting obliv status tableName %s to %s", tableName, tbName);
+    //elog(DEBUG1, "setting obliv status indexName %s to %s", indexName, idName);
+
 
 }
 void closeOblivStatus(){
@@ -87,13 +93,15 @@ void closeOblivStatus(){
 * abstraction that maps the enclave pages to the index relation pages 
 * pre-allocated in this procedure.
 */
-void initHashIndex(const char* filename, const char* pages, unsigned int nblocks, unsigned int blockSize){
+void initIndex(const char* filename, const char* pages, unsigned int nblocks, unsigned int blockSize, int initOffset){
 
 	Relation rel;
-	//BlockNumber blkno;
   int offset = 0;
   Buffer buffer = 0;
   Page page = NULL;
+
+  //elog(DEBUG1, "Requested to init index  %s for tableName %s and index name %s", filename, tableName, indexName);
+  //BlockNumber blkno;
   //SoeHashPageOpaque oopaque;
 
 	//elog(DEBUG1, "Initializing oblivious hash index file for relation %s, index OID %u, with a total of %u blocks  of size %u bytes", filename,  status.relIndexMirrorId, nblocks, blockSize);
@@ -110,10 +118,14 @@ void initHashIndex(const char* filename, const char* pages, unsigned int nblocks
        * we override this blocks
        * to be initialized by the soe blocks.
        **/
-      if(ihOID == F_HASHHANDLER && offset < 4){
+      if(ihOID == F_HASHHANDLER && (initOffset+offset) < 4){
+        elog(DEBUG1, "Initiating speacial hash pages %d ", offset);
         buffer = ReadBuffer(rel, offset);
-      }else if(ihOID ==  F_BTHANDLER && offset == 0){
-        /*When the btree index is created, block 0 is initated and has content*/
+      }else if(ihOID ==  F_BTHANDLER && (initOffset+offset) == 0){
+        /**
+         *  When the btree index is created, block 0 is initiated and
+         *  has content that must be deleted.
+         */
         buffer = ReadBuffer(rel, offset);
       }else{
         buffer = ReadBuffer(rel, P_NEW);
@@ -187,7 +199,7 @@ void initRelation(const char* filename, const char* pages, unsigned int nblocks,
     Buffer buffer = 0;
     int offset = 0;
     Page page = NULL;
-
+    //elog(DEBUG1, "Requested to init relation  %s for tableName %s and index name %s", filename, tableName, indexName);
 
     //elog(DEBUG1, "Initializing oblivious file for relation %s, heap OID %u, with a total of %u blocks  of size %u bytes", filename, status.relTableMirrorId, nblocks, blockSize);
 
@@ -255,7 +267,7 @@ void
 #else
 sgx_status_t
 #endif
-outFileInit(const char* filename, const char* pages,  unsigned int nblocks, unsigned int blocksize, int pageSize)
+outFileInit(const char* filename, const char* pages,  unsigned int nblocks, unsigned int blocksize, int pageSize, int initOffset)
 {   
 
     if(strcmp(filename, tableName) == 0)
@@ -264,7 +276,7 @@ outFileInit(const char* filename, const char* pages,  unsigned int nblocks, unsi
 
     }else if(strcmp(filename, indexName) == 0)
     {
-    	initHashIndex(filename, pages, nblocks, blocksize);
+    	initIndex(filename, pages, nblocks, blocksize, initOffset);
     }else{
 	    ereport(ERROR,
             (errcode(ERRCODE_UNDEFINED_OBJECT),
@@ -387,7 +399,7 @@ outFileWrite(const char* page, const char* filename, int blkno, int pageSize)
 
     //oopaqueOriginal = (OblivPageOpaque) PageGetSpecialPointer(page);
     //elog(DEBUG1, "Original block has blkno %d", oopaqueOriginal->o_blkno);
-
+    //elog(DEBUG1, "Requested to write to filename %s for tableName %s and index name %s", filename, tableName, indexName);
     if(strcmp(filename, tableName) == 0){
         isIndex = false;
         targetTable = status.relTableMirrorId;
@@ -399,7 +411,7 @@ outFileWrite(const char* page, const char* filename, int blkno, int pageSize)
     }else{
 	    ereport(ERROR,
             (errcode(ERRCODE_UNDEFINED_OBJECT),
-                    errmsg("Enclave requested a file initialization for %s that is not supported",
+                    errmsg("Enclave requested a outFileWrite for %s that is not supported",
                            filename)));
     }
 

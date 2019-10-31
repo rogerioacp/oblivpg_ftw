@@ -22,6 +22,7 @@
 #include "access/htup.h"
 #include "access/htup_details.h"
 #include "access/tuptoaster.h"
+#include "access/nbtree.h"
 #include "catalog/catalog.h"
 
 #include "postgres.h"
@@ -39,6 +40,12 @@
 #include "nodes/primnodes.h"
 #include "optimizer/clauses.h"
 #include "optimizer/restrictinfo.h"
+
+#include <collectc/queue.h>
+
+
+#define DYNAMIC 0
+#define FOREST 1
 
 /**
  * SGX includes
@@ -111,9 +118,11 @@ extern void _PG_fini(void);
 
 
 PG_FUNCTION_INFO_V1(init_soe);
-PG_FUNCTION_INFO_V1(log_special_pointer);
 PG_FUNCTION_INFO_V1(open_enclave);
 PG_FUNCTION_INFO_V1(close_enclave);
+//PG_FUNCTION_INFO_V1(init_fsoe);
+PG_FUNCTION_INFO_V1(load_blocks);
+//PG_FUNCTION_INFO_V1(transverse_tree);
 
 
 /* Default CPU cost to start up a foreign query. */
@@ -123,12 +132,13 @@ PG_FUNCTION_INFO_V1(close_enclave);
 #define DEFAULT_OBLIV_FDW_TOTAL_COST	100.0
 
 /* Predefined max tuple size for sgx to copy the real tuple to*/
-#define MAX_TUPLE_SIZE 200
+#define MAX_TUPLE_SIZE 300
 
 #define ENCLAVE_LIB "/usr/local/lib/soe/libsoe.signed.so"
 
 
 int opmode;
+int type_op;
 
 #ifndef UNSAFE
 sgx_enclave_id_t  enclave_id = 0;
@@ -155,6 +165,28 @@ _PG_init()
  */
 void
 _PG_fini(){}
+
+
+typedef struct BTQueueData{
+	unsigned int level;
+	BlockNumber bts_parent_blkno;
+	OffsetNumber bts_offnum;
+	BlockNumber bts_bn_entry;
+} BTQueueData;
+
+typedef BTQueueData *BTQData;
+
+typedef struct TreeConfig{
+	unsigned int levels;
+	int* fanouts;
+}TreeConfig;
+
+typedef TreeConfig *TConfig;
+
+//Assuming a default tree hight to allocate to fanouts. This is reallocated for trees with more levels.
+#define DTHeight 3
+
+
 
 
 /*
@@ -190,15 +222,18 @@ static bool obliviousIsForeignScanParallelSafe(PlannerInfo * root,
 //Helper function
 static  int getindexColumn(Oid oTable);
 
+static TConfig transverse_tree(Oid indexOID, bool load);
+
+static void load_blocks_heap(Oid heapOid);
+
 
 Datum init_soe(PG_FUNCTION_ARGS){
 
-    Oid oid;
     Oid	mappingOid;
-	sgx_status_t status;
+    Oid ftw_oid;
+	Oid realIndexOid;
 
-    MemoryContext mappingMemoryContext;
-    MemoryContext oldContext;
+	sgx_status_t status;
 
     Relation oblivMappingRel;
     Relation mirrorHeapTable;
@@ -210,27 +245,27 @@ Datum init_soe(PG_FUNCTION_ARGS){
 
     Oid hashFunctionOID;
     Oid indexHandlerOID;
-    //unsigned int indexedColumn;
 
-    TupleDesc indexTupleDesc;
 	FormData_pg_attribute attrDesc;
+    TupleDesc indexTupleDesc;
 
-	//unsigned int tupleDescLength;
 	unsigned int attrDescLength;
+	TConfig config;
 
- 	oid = PG_GETARG_OID(0); //Foreign table wrapper oid
-    opmode = PG_GETARG_UINT32(1); // Test run or deployment
+	type_op = PG_GETARG_UINT32(0);
+	ftw_oid = PG_GETARG_OID(1);
+    opmode = PG_GETARG_UINT32(2); // Test run or deployment
+	realIndexOid = PG_GETARG_OID(3);
 
     status = SGX_SUCCESS;
-    mappingMemoryContext = AllocSetContextCreate(CurrentMemoryContext, "Obliv Mapping Table",  ALLOCSET_DEFAULT_SIZES);
-    oldContext = MemoryContextSwitchTo(mappingMemoryContext);
+ 
     mappingOid = get_relname_relid(OBLIV_MAPPING_TABLE_NAME, PG_PUBLIC_NAMESPACE);
 
     if (mappingOid != InvalidOid) {
 
         oblivMappingRel = heap_open(mappingOid, RowShareLock);
         
-        oStatus = getOblivTableStatus(oid, oblivMappingRel);
+        oStatus = getOblivTableStatus(ftw_oid, oblivMappingRel);
 
         mirrorHeapTable = heap_open(oStatus.relTableMirrorId, NoLock);
         mirrorTableRelationName = RelationGetRelationName(mirrorHeapTable);
@@ -246,45 +281,70 @@ Datum init_soe(PG_FUNCTION_ARGS){
         * are also in the catalog table pg_proc.
         */
 
-        //Only works with hash indexes with a single column.
-        hashFunctionOID = mirrorIndexTable->rd_support[0];
         indexTupleDesc = RelationGetDescr(mirrorIndexTable);
         attrDesc = indexTupleDesc->attrs[0];
-        //tupleDescLength = sizeof(struct tupleDesc);
         attrDescLength = sizeof(FormData_pg_attribute);
         indexHandlerOID = mirrorIndexTable->rd_amhandler;
-        elog(DEBUG1, "rd_amhandler is %d ", indexHandlerOID);
-        //Fetch the column number of the indexed tuple
-        //indexedColumn = mirrorIndexTable->rd_index->indkey.values[0];
 
         setupOblivStatus(oStatus, mirrorTableRelationName, mirrorIndexRelationName, indexHandlerOID);
 
         elog(DEBUG1, "Initializing SOE");
 
-        #ifndef UNSAFE
-        status = initSOE(enclave_id, 
-        		mirrorTableRelationName, 
-        		mirrorIndexRelationName, 
-        		oStatus.tableNBlocks, 
-        		oStatus.indexNBlocks, 
-        		oStatus.relTableMirrorId, 
-        		oStatus.relIndexMirrorId,
-        		(unsigned int) hashFunctionOID,
-        		(unsigned int) indexHandlerOID,
-        		(char*) &attrDesc,
-        		attrDescLength);
-        #else
-        	initSOE(mirrorTableRelationName, 
-        		mirrorIndexRelationName, 
-        		oStatus.tableNBlocks, 
-        		oStatus.indexNBlocks, 
-        		oStatus.relTableMirrorId, 
-        		oStatus.relIndexMirrorId,
-        		(unsigned int) hashFunctionOID,
-        		(unsigned int) indexHandlerOID,
-        		(char*) &attrDesc,
-        		attrDescLength);
-        #endif
+        if(type_op == DYNAMIC){
+       	 	hashFunctionOID = mirrorIndexTable->rd_support[0];
+       	 	  #ifndef UNSAFE
+		        status = initSOE(enclave_id, 
+		        		mirrorTableRelationName, 
+		        		mirrorIndexRelationName, 
+		        		oStatus.tableNBlocks, 
+		        		oStatus.indexNBlocks, 
+		        		oStatus.relTableMirrorId, 
+		        		oStatus.relIndexMirrorId,
+		        		(unsigned int) hashFunctionOID,
+		        		(unsigned int) indexHandlerOID,
+		        		(char*) &attrDesc,
+		        		attrDescLength);
+	        #else
+	        	initSOE(mirrorTableRelationName, 
+	        		mirrorIndexRelationName, 
+	        		oStatus.tableNBlocks, 
+	        		oStatus.indexNBlocks, 
+	        		oStatus.relTableMirrorId, 
+	        		oStatus.relIndexMirrorId,
+	        		(unsigned int) hashFunctionOID,
+	        		(unsigned int) indexHandlerOID,
+	        		(char*) &attrDesc,
+	        		attrDescLength);
+	        #endif
+        }else if(type_op == FOREST){
+        	config = transverse_tree(realIndexOid, false);
+	     #ifndef UNSAFE
+	        status = initFSOE(enclave_id, 
+	        		mirrorTableRelationName, 
+	        		mirrorIndexRelationName, 
+	        		oStatus.tableNBlocks, 
+	        		config->fanouts,
+	        		config->levels,
+	        		oStatus.relTableMirrorId, 
+	        		oStatus.relIndexMirrorId,
+	        		(char*) &attrDesc,
+	        		attrDescLength);
+	        #else
+	        	initFSOE(mirrorTableRelationName, 
+	        		mirrorIndexRelationName, 
+	        		oStatus.tableNBlocks, 
+	        		config->fanouts,
+	        		config->levels,
+	        		oStatus.relTableMirrorId, 
+	        		oStatus.relIndexMirrorId,
+	        		(char*) &attrDesc,
+	        		attrDescLength);
+	        #endif
+        }else{
+        	elog(ERROR, "Unsupported initialization type %d", type_op);
+        }
+
+      
         if(status != SGX_SUCCESS){
         	elog(ERROR, "SOE initialization failed %d ", status);
         }
@@ -294,17 +354,10 @@ Datum init_soe(PG_FUNCTION_ARGS){
         heap_close(oblivMappingRel, RowShareLock);
 
     }
-    MemoryContextSwitchTo(oldContext);
-    MemoryContextDelete(mappingMemoryContext);
     PG_RETURN_INT32(0);
 
 }
 
-
-
-Datum log_special_pointer(PG_FUNCTION_ARGS) {
-	PG_RETURN_INT32(0);
-}
 
 Datum open_enclave(PG_FUNCTION_ARGS) {
 	#ifndef UNSAFE
@@ -337,6 +390,229 @@ Datum open_enclave(PG_FUNCTION_ARGS) {
     #endif
 }
 
+
+TConfig transverse_tree(Oid indexOID, bool load) {
+	Relation irel;
+	BTQData queue_data = NULL;
+	void *qblock;
+	Buffer bufp;
+	int queue_stat;
+	Queue  *queue;
+	bool isroot = true;
+	unsigned int max_height = 0;
+	unsigned int cb_height = 0;
+	unsigned int nblocks_level = 0;
+	unsigned int level_offset = 0;
+	unsigned int nblocks_level_next = 0;
+	TConfig result;
+
+	result = (TConfig) palloc(sizeof(struct TreeConfig));
+	result->fanouts = (int*) palloc(sizeof(int)*DTHeight);
+
+
+	irel = index_open(indexOID, ExclusiveLock);
+
+
+	queue_stat = queue_new(&queue);
+
+	if(queue_stat != CC_OK){
+		// TODO: Log error and abort.
+        elog(ERROR, " queue initialization failed");
+	} 
+	/*Get the root page to start with */
+	bufp = _bt_getroot(irel, BT_READ);
+
+	//The three has not been created and does not have a root
+	//if(!BufferIsValid(*bufp))
+		/**/
+
+
+	queue_data = (BTQData) palloc(sizeof(BTQueueData));
+	queue_data->bts_parent_blkno = InvalidBlockNumber; //IS ROOT
+	// the root is not the offset of any other block.
+	queue_data->bts_offnum = InvalidOffsetNumber; 
+	queue_data->bts_bn_entry = 0;// We consider root to be on the first block.
+	queue_data->level = 0;
+
+	queue_enqueue(queue, queue_data);
+
+
+	//Breadth first tree transversal
+	while(queue_poll(queue, &qblock) != CC_ERR_OUT_OF_RANGE){
+		Page page;
+		//current queue (cq) data
+		BTQData cq_data = NULL;
+		BTPageOpaque opaque;
+		OffsetNumber offnum;
+		ItemId itemid;
+		IndexTuple itup;
+		BlockNumber blkno;
+		BlockNumber par_blkno;
+		OffsetNumber low,
+					 high;
+		//target block
+		BlockNumber tblock;
+		if(load){
+			tblock = nblocks_level_next;
+		}
+
+		BTQData cblock = (BTQData) qblock;
+
+		blkno = cblock->bts_bn_entry;
+
+		//ITS NOT A ROOT BLOCK
+		if(!isroot){
+			bufp = ReadBuffer(irel, cblock->bts_bn_entry);
+		}
+
+		page = BufferGetPage(bufp);
+		opaque = (BTPageOpaque) PageGetSpecialPointer(page);
+		blkno = BufferGetBlockNumber(bufp);
+		low = P_FIRSTDATAKEY(opaque);
+		high = PageGetMaxOffsetNumber(page);
+
+	
+		if(load){
+			//Set tree page prev pointer
+			if(opaque->btpo_prev != P_NONE){
+				opaque->btpo_prev = level_offset-1;
+			}
+
+			//Set tree page next pointer
+			if(opaque->btpo_next != P_NONE){
+				opaque->btpo_next = level_offset+1;
+			}
+
+		}
+		
+		par_blkno = BufferGetBlockNumber(bufp);
+		offnum = low;
+		if(!P_ISLEAF(opaque)){
+			while(offnum <= high){
+				//push elements to the stack  to be transversed on the next loop iteration.
+				// Get page offset on disk.
+
+				itemid = PageGetItemId(page, offnum);
+				itup = (IndexTuple) PageGetItem(page, itemid);
+				blkno = BTreeInnerTupleGetDownLink(itup);
+
+				cq_data = (BTQData) palloc(sizeof(BTQueueData));
+				cq_data->bts_offnum = offnum;
+				cq_data->bts_bn_entry = blkno;
+				cq_data->bts_parent_blkno = par_blkno;
+
+				queue_enqueue(queue, cq_data);
+				offnum = OffsetNumberNext(offnum);
+
+				if(load){
+					//update children block numbers
+					BTreeInnerTupleSetDownLink(itup, tblock);
+					tblock +=1; 
+				}
+			}
+		}
+
+		if(load){
+			//Invoke SOE function to store tree block
+			addIndexBlock(page, BLCKSZ, level_offset, max_height);
+		}
+
+		if(P_ISROOT(opaque)){
+			nblocks_level = high-low+1;
+			level_offset = 0;
+			cb_height +=1;
+			isroot = false;
+			max_height = Max(max_height, cb_height);
+			
+			if(!load){
+				result->fanouts[0] = nblocks_level;
+			}
+
+		}else{
+
+			if(level_offset == nblocks_level-1){
+				if(!P_ISLEAF(opaque)){
+					nblocks_level_next += (high-low+1);
+					if(!load){
+						if(cb_height > DTHeight){
+							result->fanouts = (int*) realloc(result->fanouts, sizeof(int)*cb_height);
+						}
+						result->fanouts[cb_height] = nblocks_level_next;
+					}
+				}
+				nblocks_level = nblocks_level_next;
+				nblocks_level_next = 0;
+				cb_height += 1;
+				max_height = Max(max_height, cb_height);
+				level_offset = 0;
+			}else{
+				level_offset++;
+				if(!P_ISLEAF(opaque)){
+					nblocks_level_next += (high-low+1);
+				}
+			}			
+		}
+
+		pfree(qblock);
+		ReleaseBuffer(bufp);
+	}
+
+	queue_destroy(queue);
+	index_close(irel, ExclusiveLock);
+	if(!load){
+		result->levels = max_height-1;
+	}
+	return result;
+}
+
+
+Datum load_blocks(PG_FUNCTION_ARGS){
+	//print_status();
+	Oid ioid = PG_GETARG_OID(0);
+	Oid toid = PG_GETARG_OID(1);
+	//elog(DEBUG1, "Requested to load blocks for index %d and table %d", ioid, toid);
+	//print_status();
+	//elog(DEBUG1,"Initializing oblivious tree construction");
+	transverse_tree(ioid, true);
+	//elog(DEBUG1, "Initializing oblivious heap table");
+	load_blocks_heap(toid);
+	PG_RETURN_INT32(0);
+}
+
+
+void load_blocks_heap(Oid toid){
+	Relation rel;
+	BlockNumber npages;
+	BlockNumber blkno;
+	Buffer buffer;
+	Page page;
+	//uint16 ps_size;
+	PageHeader	phdr;
+
+	rel = heap_open(toid, ExclusiveLock);
+	npages = RelationGetNumberOfBlocks(rel);
+	for(blkno = 0; blkno < npages;blkno++){
+		buffer = ReadBuffer(rel, blkno);
+		if(BufferIsValid(buffer)){
+			page = BufferGetPage(buffer);
+			phdr = (PageHeader) page;
+
+			//ps_size = PageGetSpecialSize(page);
+			//elog(DEBUG1, "Page special size is %d", phdr->pd_prune_xid);
+			// storing on blkno on page header as it is not used by postgres engine.
+			phdr->pd_prune_xid = blkno;
+			//elog(DEBUG1, "Page special is now %d", phdr->pd_prune_xid);
+
+			addHeapBlock(page, BLCKSZ, blkno);
+		}else{
+			elog(ERROR, "Buffer is invalid %d", blkno);
+		}
+		ReleaseBuffer(buffer);
+	}
+	heap_close(rel, ExclusiveLock);
+}
+
+
 Datum close_enclave(PG_FUNCTION_ARGS) {
 
 	#ifndef UNSAFE
@@ -344,7 +620,7 @@ Datum close_enclave(PG_FUNCTION_ARGS) {
 		status = sgx_destroy_enclave(enclave_id);
 
 		if(SGX_SUCCESS != status){
-			elog(DEBUG1, "Enclave was not destroyed. Return error %d", status);
+			elog(ERROR, "Enclave was not destroyed. Return error %d", status);
 			PG_RETURN_INT32(status);
 		}
 
@@ -613,11 +889,24 @@ obliviousIterateForeignScan(ForeignScanState * node)
 	* The real tuple header size is set inside of the enclave on the
 	* HeapTupleData strut in the field t_len;
 	*/
-	#ifdef UNSAFE
-		rowFound = getTuple(opmode, fsstate->opno, key, len, (char*) &(fsstate->tuple), sizeof(HeapTupleData), (char*) fsstate->tupleHeader, MAX_TUPLE_SIZE);
-	#else
-		getTuple(enclave_id, &rowFound, opmode, fsstate->opno, key, len , (char*) &(fsstate->tuple), sizeof(HeapTupleData), (char*) fsstate->tupleHeader, MAX_TUPLE_SIZE);
-	#endif
+	if(type_op == DYNAMIC){
+		#ifdef UNSAFE
+			rowFound = getTuple(opmode, fsstate->opno, key, len, (char*) &(fsstate->tuple), sizeof(HeapTupleData), (char*) fsstate->tupleHeader, MAX_TUPLE_SIZE);
+		#else
+			getTuple(enclave_id, &rowFound, opmode, fsstate->opno, key, len , (char*) &(fsstate->tuple), sizeof(HeapTupleData), (char*) fsstate->tupleHeader, MAX_TUPLE_SIZE);
+		#endif
+
+	}else if(type_op == FOREST){
+
+		#ifdef UNSAFE
+			rowFound = getTupleOST(opmode, fsstate->opno, key, len, (char*) &(fsstate->tuple), sizeof(HeapTupleData), (char*) fsstate->tupleHeader, MAX_TUPLE_SIZE);
+		#else
+			getTupleOST(enclave_id, &rowFound, opmode, fsstate->opno, key, len , (char*) &(fsstate->tuple), sizeof(HeapTupleData), (char*) fsstate->tupleHeader, MAX_TUPLE_SIZE);
+		#endif
+	}else{
+		rowFound = -1;
+	}
+
 	fsstate->tuple.t_data = fsstate->tupleHeader;
 
 	if (rowFound == 0)

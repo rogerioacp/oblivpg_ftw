@@ -9,7 +9,13 @@ else
 	SOE_LIB = -lsoeu $(SGX_LIB) 
 endif
 
-SHLIB_LINK = -loram -lcollectc $(ENCLAVE_LIB) $(SOE_LIB)
+ifeq ($(ORAM_LIB), PATHORAM)
+		ORAM_LADD := -lpathoram
+else ifeq ($(ORAM_LIB), FORESTORAM)
+		ORAM_LADD := -lforestoram
+endif
+
+SHLIB_LINK = $(ORAM_LADD) -lcollectc $(ENCLAVE_LIB) $(SOE_LIB)
 
 
 EXTENSION = oblivpg_fdw
