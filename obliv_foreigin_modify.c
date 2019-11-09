@@ -1,29 +1,30 @@
 
 static void
-obliviousBeginForeignModify(ModifyTableState * mtstate,
-							ResultRelInfo * rinfo, List * fdw_private,
+obliviousBeginForeignModify(ModifyTableState *mtstate,
+							ResultRelInfo *rinfo, List *fdw_private,
 							int subplan_index, int eflags)
 {
 
 	elog(DEBUG1, "In obliviousBeginForeignModify");
 	Oid			mappingOid;
 	Ostatus		obliv_status;
-    MemoryContext mappingMemoryContext;
-    MemoryContext oldContext;
+	MemoryContext mappingMemoryContext;
+	MemoryContext oldContext;
 
-    Relation oblivFDWTable;
-	Relation oblivMappingRel;
+	Relation	oblivFDWTable;
+	Relation	oblivMappingRel;
 
-	//underlying heap files
-    Relation    heapTableRelation;
-    Relation	indexRelation;
+	/* underlying heap files */
+	Relation	heapTableRelation;
+	Relation	indexRelation;
 	FdwOblivTableStatus oStatus;
-    char* relationName;
-    mappingMemoryContext = AllocSetContextCreate(CurrentMemoryContext, "Obliv Mapping Table",  ALLOCSET_DEFAULT_SIZES);
-    oldContext = MemoryContextSwitchTo(mappingMemoryContext);
+	char	   *relationName;
+
+	mappingMemoryContext = AllocSetContextCreate(CurrentMemoryContext, "Obliv Mapping Table", ALLOCSET_DEFAULT_SIZES);
+	oldContext = MemoryContextSwitchTo(mappingMemoryContext);
 
 	oblivFDWTable = rinfo->ri_RelationDesc;
-    relationName = RelationGetRelationName(oblivFDWTable);
+	relationName = RelationGetRelationName(oblivFDWTable);
 
 	mappingOid = get_relname_relid(OBLIV_MAPPING_TABLE_NAME, PG_PUBLIC_NAMESPACE);
 
@@ -39,20 +40,20 @@ obliviousBeginForeignModify(ModifyTableState * mtstate,
 		{
 			elog(DEBUG1, "Index has not been created");
 
-			//Create heap file for obliv index.
+			/* Create heap file for obliv index. */
 			indexRelation = obliv_index_create(oStatus);
 
-			//Create heap file for obliv table
-            heapTableRelation = obliv_table_create(oblivFDWTable);
+			/* Create heap file for obliv table */
+			heapTableRelation = obliv_table_create(oblivFDWTable);
 
-            //ipdate ostates data
-            oStatus.indexRelFileNode =  indexRelation->rd_id;
-            oStatus.heapTableRelFileNode = heapTableRelation->rd_id;
+			/* ipdate ostates data */
+			oStatus.indexRelFileNode = indexRelation->rd_id;
+			oStatus.heapTableRelFileNode = heapTableRelation->rd_id;
 
-            //update OBLIV_MAPPING_TABLE records
+			/* update OBLIV_MAPPING_TABLE records */
 			setOblivStatusInitated(oStatus, oblivMappingRel);
 			heap_close(oblivMappingRel, RowShareLock);
-            setupOblivStatus(oStatus);
+			setupOblivStatus(oStatus);
 		}
 		else if (obliv_status == OBLIVIOUS_INITIALIZED)
 		{
@@ -92,7 +93,7 @@ obliviousBeginForeignModify(ModifyTableState * mtstate,
 	pfree(relationName);
 	MemoryContextSwitchTo(oldContext);
 	MemoryContextDelete(mappingMemoryContext);
-    elog(DEBUG1, "closed begin foreing modify");
+	elog(DEBUG1, "closed begin foreing modify");
 
 
 }

@@ -14,13 +14,14 @@
 #ifndef POSTGRESQL_OBLIV_PAGE_H
 #define POSTGRESQL_OBLIV_PAGE_H
 
-//Data structure of the contents stored on every oblivious page.
+/* Data structure of the contents stored on every oblivious page. */
 typedef struct OblivPageOpaqueData
 {
-    int		o_blkno; //original block number. This should be encrypted.
+	int			o_blkno;
+	/* original block number.This should be encrypted. */
 
-} OblivPageOpaqueData;
+}			OblivPageOpaqueData;
 
-typedef OblivPageOpaqueData *OblivPageOpaque;
+typedef OblivPageOpaqueData * OblivPageOpaque;
 
-#endif //POSTGRESQL_OBLIV_PAGE_H
+#endif							/* //POSTGRESQL_OBLIV_PAGE_H */

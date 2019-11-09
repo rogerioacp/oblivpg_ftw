@@ -47,7 +47,7 @@ typedef struct FdwOblivTableStatus
 	/**
 	 *  The mirror table relation id.
 	 **/
-	Oid 	relTableMirrorId;
+	Oid			relTableMirrorId;
 
 	/**
 	 * The mirror index relation Id.
@@ -55,18 +55,25 @@ typedef struct FdwOblivTableStatus
 	Oid			relIndexMirrorId;
 
 
-	/* number of blocks that the mirror table should have. This number is used by the
-	 * ORAM algorithm to calculate the number of blocks to allocate to the oblivious
-	 * table*/
-	int 		tableNBlocks;
+	/*
+	 * number of blocks that the mirror table should have. This number is used
+	 * by the ORAM algorithm to calculate the number of blocks to allocate to
+	 * the oblivious table
+	 */
+	int			tableNBlocks;
 
-	/* number of blocks that the mirror index should have. This number is used by the
-	 * ORAM algorithm to calculate the number of blocks to allocate to the oblivious
-	 * index*/
-	int 		indexNBlocks;
+	/*
+	 * number of blocks that the mirror index should have. This number is used
+	 * by the ORAM algorithm to calculate the number of blocks to allocate to
+	 * the oblivious index
+	 */
+	int			indexNBlocks;
 
-    // boolean flag defining if the relation and index oblivious file have been initated.
-	bool 		filesInitated;
+	/*
+	 * boolean flag defining if the relation and index oblivious file have
+	 * been initated.
+	 */
+	bool		filesInitated;
 } FdwOblivTableStatus;
 
 

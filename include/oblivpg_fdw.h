@@ -1,6 +1,6 @@
-//
-// Created by Rogério Pontes on 2019-03-26.
-//
+/*  */
+/*  Created by Rogério Pontes on 2019-03-26. */
+/*  */
 
 #ifndef OBLIVPG_FDW_H
 #define OBLIVPG_FDW_H
@@ -15,25 +15,30 @@
  *
  * The attributes of this data structure follow the example of postgres_fdw.c
  */
-typedef struct OblivScanState{
+typedef struct OblivScanState
+{
 
 
-    Relation mirrorTable; /*relchache entry for the mirror table*/
-    TupleDesc tableTupdesc; /* table tuple descriptor for scan */
+	Relation	mirrorTable;	/* relchache entry for the mirror table */
+	TupleDesc	tableTupdesc;	/* table tuple descriptor for scan */
 
 
-    /* for storing result tuples
-     *
-     * In the future oblivpg might have a batch of resuts to return to the client
-     **/
-    HeapTupleData tuple;			/* array of currently-retrieved tuples */
-    HeapTupleHeader tupleHeader;    /* Temporary Tuple Header location*/
+	/*
+	 * for storing result tuples
+	 *
+	 * In the future oblivpg might have a batch of resuts to return to the
+	 * client
+	 */
+	HeapTupleData tuple;		/* array of currently-retrieved tuples */
+	HeapTupleHeader tupleHeader;	/* Temporary Tuple Header location */
 
-	char* searchValue;  //currently we are assuming saerchees over char types. Encrypted blocks
-	int   searchValueSize; //The size of the encryptedBlock.
+	char	   *searchValue;
+	/* currently we are assuming saerchees over char types.Encrypted blocks */
+	int			searchValueSize;
+	/* The size of the encryptedBlock. */
 
-    Oid   opno;
+	Oid			opno;
 
 } OblivScanState;
 
-#endif //OBLIVPG_FDW_H
+#endif							/* //OBLIVPG_FDW_H */

@@ -48,11 +48,11 @@
 /* non-export function prototypes */
 
 static TupleDesc CustomConstructTupleDescriptor(Relation heapRelation,
-												IndexInfo * indexInfo,
-												List * indexColNames,
+												IndexInfo *indexInfo,
+												List *indexColNames,
 												Oid accessMethodObjectId,
-												Oid * collationObjectId,
-												Oid * classObjectId);
+												Oid *collationObjectId,
+												Oid *classObjectId);
 
 static void createHeapTupleDescriptor(FdwOblivTableStatus status);
 
@@ -63,7 +63,8 @@ TupleDesc	createIndexTupleDescriptor(Relation mirrorHeapRelation, Relation mirro
 
 
 Relation
-obliv_table_create(FdwOblivTableStatus status){
+obliv_table_create(FdwOblivTableStatus status)
+{
 	Relation	result;
 
 
@@ -81,25 +82,25 @@ obliv_table_create(FdwOblivTableStatus status){
 	char		relKind;
 	char		relpersistence;
 
-	char 	   *relationName;
-	char 	   *oblivTableRelationName;
+	char	   *relationName;
+	char	   *oblivTableRelationName;
 
 	bool		shared_relation;
 	bool		mapped_relation;
-	Relation 	mirrorHeapRelation;
-	Relation    pg_class;
+	Relation	mirrorHeapRelation;
+	Relation	pg_class;
 
-    pg_class = heap_open(RelationRelationId, RowExclusiveLock);
+	pg_class = heap_open(RelationRelationId, RowExclusiveLock);
 
 
 
-    /*
-     * The heap tables are going to be considered unlogged as it is not
-     * relevant for the prototype to recover from crashes. This is something
-     * to think about in the future. Furthermore, the relperstence option is
-     * irrelevant for this extension, it only modifies the behavior of the
-     * function for temporary table which is not the case being considered.
-     */
+	/*
+	 * The heap tables are going to be considered unlogged as it is not
+	 * relevant for the prototype to recover from crashes. This is something
+	 * to think about in the future. Furthermore, the relperstence option is
+	 * irrelevant for this extension, it only modifies the behavior of the
+	 * function for temporary table which is not the case being considered.
+	 */
 	relpersistence = RELPERSISTENCE_UNLOGGED;
 
 
@@ -131,13 +132,13 @@ obliv_table_create(FdwOblivTableStatus status){
 	mirrorHeapRelation = heap_open(status.relTableMirrorId, AccessShareLock);
 
 
-	relationName =  RelationGetRelationName(mirrorHeapRelation);
+	relationName = RelationGetRelationName(mirrorHeapRelation);
 	oblivTableRelationName = generateOblivTableName(relationName);
 
 	nameSpace = RelationGetNamespace(mirrorHeapRelation);
 
 	tupleDesc = mirrorHeapRelation->rd_att;
-    createHeapTupleDescriptor(status);
+	createHeapTupleDescriptor(status);
 
 	relKind = RELKIND_RELATION;
 
@@ -150,9 +151,9 @@ obliv_table_create(FdwOblivTableStatus status){
 	/*
 	 * For most tables, the physical file underlying the table is specified by
 	 * pg_class.relfilenode.  However, that obviously won't work for pg_class
-	 * itself, nor for the other "nailed" catalogs for which we have to be able
-	 * to set up working Relation entries without access to pg_class.
-	 **/
+	 * itself, nor for the other "nailed" catalogs for which we have to be
+	 * able to set up working Relation entries without access to pg_class.
+	 */
 	mapped_relation = false;
 
 	elog(DEBUG1, "going to create heap");
@@ -170,20 +171,20 @@ obliv_table_create(FdwOblivTableStatus status){
 
 	elog(DEBUG1, "inserting tuple on pgclass");
 
-    /*
-     * store index's pg_class entry
-     */
-    InsertPgClassTuple(pg_class, result,
-                       RelationGetRelid(result),
-                       (Datum) 0,
+	/*
+	 * store index's pg_class entry
+	 */
+	InsertPgClassTuple(pg_class, result,
+					   RelationGetRelid(result),
+					   (Datum) 0,
 					   (Datum) 0);
 
-    /* done with pg_class */
-    heap_close(pg_class, RowExclusiveLock);
+	/* done with pg_class */
+	heap_close(pg_class, RowExclusiveLock);
 
 
 	heap_close(result, NoLock);
-	heap_close(mirrorHeapRelation,AccessShareLock);
+	heap_close(mirrorHeapRelation, AccessShareLock);
 	pfree(relationName);
 	pfree(oblivTableRelationName);
 
@@ -322,11 +323,11 @@ obliv_index_create(FdwOblivTableStatus status)
  **/
 static TupleDesc
 CustomConstructTupleDescriptor(Relation heapRelation,
-							   IndexInfo * indexInfo,
-							   List * indexColNames,
+							   IndexInfo *indexInfo,
+							   List *indexColNames,
 							   Oid accessMethodObjectId,
-							   Oid * collationObjectId,
-							   Oid * classObjectId)
+							   Oid *collationObjectId,
+							   Oid *classObjectId)
 {
 	int			numatts = indexInfo->ii_NumIndexAttrs;
 	int			numkeyatts = indexInfo->ii_NumIndexKeyAttrs;
@@ -770,4 +771,3 @@ createIndexTupleDescriptor(Relation mirrorHeapRelation, Relation mirrorIndexRela
 	return result;
 
 }
-

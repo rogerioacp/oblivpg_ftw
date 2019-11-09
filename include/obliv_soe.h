@@ -20,9 +20,9 @@
 
 #define SOE_CONTEXT "SOE_CONTEXT"
 
-void	initSOE(char* relName, size_t nblocks, size_t bucketCapacity);
-void 	insertTuple(const char* relname, Item item, Size size);
-bool    getTuple(OblivScanState* state);
+void		initSOE(char *relName, size_t nblocks, size_t bucketCapacity);
+void		insertTuple(const char *relname, Item item, Size size);
+bool		getTuple(OblivScanState *state);
 
 
 #endif							/* OBLIV_SOE_H */

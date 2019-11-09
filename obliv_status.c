@@ -62,44 +62,46 @@ getOblivTableStatus(Oid ftwOid, Relation rel)
 
 	if (found)
 	{
-		bool        isMirrorTableNull,
+		bool		isMirrorTableNull,
 					isMirrorIndexNull,
-		            isTableNBlocksNull,
-		            isIndexNBlocksNull,
-		            isInitNull;
+					isTableNBlocksNull,
+					isIndexNBlocksNull,
+					isInitNull;
 
 
-		Datum       dMirrorTableId,
+		Datum		dMirrorTableId,
 					dMirrorIndexId,
 					dTableNBlocks,
 					dIndexNBlocks,
 					dInit;
 
-		int tableNBlocks = 0;
-		int indexNBlocks = 0;
+		int			tableNBlocks = 0;
+		int			indexNBlocks = 0;
 
 		dMirrorTableId = heap_getattr(tuple, Anum_obl_mirror_table_oid, tupleDesc, &isMirrorTableNull);
 		dMirrorIndexId = heap_getattr(tuple, Anum_obl_mirror_index_oid, tupleDesc, &isMirrorIndexNull);
 		dTableNBlocks = heap_getattr(tuple, Anum_obl_ftw_table_nblocks, tupleDesc, &isTableNBlocksNull);
 		dIndexNBlocks = heap_getattr(tuple, Anum_obl_ftw_index_nblocks, tupleDesc, &isIndexNBlocksNull);
-        dInit = heap_getattr(tuple,  Anum_obl_init, tupleDesc, &isInitNull);
+		dInit = heap_getattr(tuple, Anum_obl_init, tupleDesc, &isInitNull);
 
 		if (!isMirrorTableNull)
 			iStatus.relTableMirrorId = DatumGetObjectId(dMirrorTableId);
 		if (!isMirrorIndexNull)
 			iStatus.relIndexMirrorId = DatumGetObjectId(dMirrorIndexId);
-		if(!isTableNBlocksNull) {
-			//iStatus.tableNBlocks = DatumGetInt32(dTableNBlocks);
+		if (!isTableNBlocksNull)
+		{
+			/* iStatus.tableNBlocks = DatumGetInt32(dTableNBlocks); */
 			tableNBlocks = DatumGetInt32(dTableNBlocks);
-			//elog(DEBUG1, "number of table blocks %d", tableNBlocks);
+			/* elog(DEBUG1, "number of table blocks %d", tableNBlocks); */
 			iStatus.tableNBlocks = tableNBlocks;
 		}
-		if(!isIndexNBlocksNull){
+		if (!isIndexNBlocksNull)
+		{
 			indexNBlocks = DatumGetInt32(dIndexNBlocks);
-			//elog(DEBUG1, "number of index blocks %d", indexNBlocks);
+			/* elog(DEBUG1, "number of index blocks %d", indexNBlocks); */
 			iStatus.indexNBlocks = indexNBlocks;
 		}
-		if(!isInitNull)
+		if (!isInitNull)
 			iStatus.filesInitated = DatumGetBool(dInit);
 	}
 	else
@@ -137,7 +139,7 @@ validateIndexStatus(FdwOblivTableStatus toValidate)
          **/
 		ereport(ERROR,
 				(errcode(ERRCODE_UNDEFINED_OBJECT),
-						errmsg("Oid of FDW table is not valid on table %s", OBLIV_MAPPING_TABLE_NAME)));
+				 errmsg("Oid of FDW table is not valid on table %s", OBLIV_MAPPING_TABLE_NAME)));
 		return result;
 
 	}
@@ -166,43 +168,47 @@ validateIndexStatus(FdwOblivTableStatus toValidate)
 	}
 
 
-	if(toValidate.tableNBlocks <= 0 ){
-        /**
-         * Throw error to warn user that there must be a valid index access method for the Mirror Index.
-         **/
-        ereport(ERROR,
-                (errcode(ERRCODE_UNDEFINED_OBJECT),
-                        errmsg("Number of blocks %d for oblivious simulation of table %s is not valid", toValidate.tableNBlocks,  OBLIV_MAPPING_TABLE_NAME)));
-        return result;
-	}
-
-    if(toValidate.indexNBlocks <= 0 ){
-        /**
-         * Throw error to warn user that there must be a valid index access method for the Mirror Index.
-         **/
-        ereport(ERROR,
-                (errcode(ERRCODE_UNDEFINED_OBJECT),
-                        errmsg("Number of blocks %d for oblivious simulation of table index %s is not valid", toValidate.indexNBlocks, OBLIV_MAPPING_TABLE_NAME)));
-        return result;
-    }
-
-
-    if (toValidate.filesInitated)
+	if (toValidate.tableNBlocks <= 0)
 	{
-        return OBLIVIOUS_INITIALIZED;
+		/**
+         * Throw error to warn user that there must be a valid index access method for the Mirror Index.
+         **/
+		ereport(ERROR,
+				(errcode(ERRCODE_UNDEFINED_OBJECT),
+				 errmsg("Number of blocks %d for oblivious simulation of table %s is not valid", toValidate.tableNBlocks, OBLIV_MAPPING_TABLE_NAME)));
+		return result;
 	}
 
-    return OBLIVIOUS_UNINTIALIZED;
+	if (toValidate.indexNBlocks <= 0)
+	{
+		/**
+         * Throw error to warn user that there must be a valid index access method for the Mirror Index.
+         **/
+		ereport(ERROR,
+				(errcode(ERRCODE_UNDEFINED_OBJECT),
+				 errmsg("Number of blocks %d for oblivious simulation of table index %s is not valid", toValidate.indexNBlocks, OBLIV_MAPPING_TABLE_NAME)));
+		return result;
+	}
+
+
+	if (toValidate.filesInitated)
+	{
+		return OBLIVIOUS_INITIALIZED;
+	}
+
+	return OBLIVIOUS_UNINTIALIZED;
 }
 
-void setOblivStatusInitated(FdwOblivTableStatus status, Relation mappingRel){
+void
+setOblivStatusInitated(FdwOblivTableStatus status, Relation mappingRel)
+{
 
 
 	ScanKeyData skey;
 	HeapScanDesc scan;
 	Snapshot	snapshot;
 	HeapTuple	oldTuple;
-	HeapTuple   newTuple;
+	HeapTuple	newTuple;
 	bool		found;
 	Datum		new_record[Natts_obliv_mapping];
 	bool		new_record_nulls[Natts_obliv_mapping];
@@ -225,17 +231,19 @@ void setOblivStatusInitated(FdwOblivTableStatus status, Relation mappingRel){
 		MemSet(new_record, 0, sizeof(new_record));
 		MemSet(new_record_nulls, false, sizeof(new_record_nulls));
 		MemSet(new_record_repl, false, sizeof(new_record_repl));
-		new_record[Anum_obl_init-1] = BoolGetDatum(true);
-		new_record_repl[Anum_obl_init-1] = true;
+		new_record[Anum_obl_init - 1] = BoolGetDatum(true);
+		new_record_repl[Anum_obl_init - 1] = true;
 
 
 		newTuple = heap_modify_tuple(oldTuple, RelationGetDescr(mappingRel),
-					new_record, new_record_nulls, new_record_repl);
+									 new_record, new_record_nulls, new_record_repl);
 
-		simple_heap_update(mappingRel, &oldTuple->t_self,newTuple);
-		//heap_freetuple(newTuple);
+		simple_heap_update(mappingRel, &oldTuple->t_self, newTuple);
+		/* heap_freetuple(newTuple); */
 
-	}else{
+	}
+	else
+	{
 		/**
 		 *  Something went really wrong, somehow the tuple that existed in the first scan on the function getIndexStatus
 		 *  disapeared. This function has a pointer to the same relation that was used on the function getIndexStatus
@@ -243,7 +251,7 @@ void setOblivStatusInitated(FdwOblivTableStatus status, Relation mappingRel){
 		 **/
 		ereport(ERROR,
 				(errcode(ERRCODE_UNDEFINED_OBJECT),
-						errmsg(" updateOblivIndexStatus can not find the valid record on the table %s", OBLIV_MAPPING_TABLE_NAME)));
+				 errmsg(" updateOblivIndexStatus can not find the valid record on the table %s", OBLIV_MAPPING_TABLE_NAME)));
 
 	}
 

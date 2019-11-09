@@ -19,7 +19,7 @@
 #include "utils/relcache.h"
 
 
-Relation    obliv_table_create(FdwOblivTableStatus status);
+Relation	obliv_table_create(FdwOblivTableStatus status);
 Relation	obliv_index_create(FdwOblivTableStatus status);
 
 
