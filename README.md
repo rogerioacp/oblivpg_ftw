@@ -26,11 +26,28 @@ export SGX_LIB="-L/opt/intel/sgxsdk/lib64 -lsgx_urts_sim -lpthread -lsgx_uae_ser
 
 ```bash
 
- make CFLAGS="-Wall -Wmissing-prototypes -Wpointer-arith -Wdeclaration-after-statement -Wendif-labels -Wmissing-format-attribute -Wformat-security -fno-strict-aliasing -fwrapv -fexcess-precision=standard -g -O0 -fPIC -I. -I./ -I/usr/local/pgsql/include/server -I/usr/local/pgsql/include/internal -I/usr/local/include/soe -I/opt/intel/sgxsdk/include"
+ make CFLAGS="-Wall -Wmissing-prototypes -Wpointer-arith -Wdeclaration-after-statement -Wendif-labels -Wmissing-format-attribute -Wformat-security -fno-strict-aliasing -fwrapv -fexcess-precision=standard -g -O0 -fPIC -I. -I./ -I/usr/local/pgsql/include/server -I/usr/local/pgsql/include/internal -I/usr/local/include/soe -I/opt/intel/sgxsdk/include" ORAM_LIB=(PATHORAM or FORESTORAM)
 
 ```
 
+The library compilation process has two configuration flags:
+
+-  UNSAFE (1,0) - When set to 1 the library will issue enclave calls, otherwise it will use the SOE API without the enclave.
+- ORAM_LIB:
+   - PATHORAM - Link the library with the Path ORAM library.
+   - FORESTORAM - Link the library with the Forest ORAM library.
+
 - Install the library.
+
+
+- Example make with unsafe and Forest ORAM on Linux.
+
+```bash
+
+make CFLAGS='-Wall -Wmissing-prototypes -Wpointer-arith -Wdeclaration-after-statement -Wendif-labels -Wmissing-format-attribute -Wformat-security -fno-strict-aliasing -fwrapv -fexcess-precision=standard -g -pg -DLINUX_PROFILE -O2 -fPIC -I/usr/local/include -I/usr/local/include/soe -I. -I./ -I/usr/local/pgsql/include/server -I/usr/local/pgsql/include/internal  -D_GNU_SOURCE -D UNSAFE'  UNSAFE=1 ORAM_LIB=FORESTORAM
+
+
+```
 
 ```bash
 
