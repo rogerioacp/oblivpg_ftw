@@ -29,6 +29,7 @@
 #include "utils/relcache.h"
 #include "utils/rel.h"
 #include "utils/snapmgr.h"
+#include "utils/builtins.h"
 
 FdwOblivTableStatus
 getOblivTableStatus(Oid ftwOid, Relation rel)
@@ -259,3 +260,5 @@ setOblivStatusInitated(FdwOblivTableStatus status, Relation mappingRel)
 	heap_endscan(scan);
 	UnregisterSnapshot(snapshot);
 }
+
+

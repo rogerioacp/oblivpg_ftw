@@ -55,3 +55,6 @@ dkms.conf
 
 #postgres files
 oblivpg_fdw.typedefs
+
+#ctags
+tags

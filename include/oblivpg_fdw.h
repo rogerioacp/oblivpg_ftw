@@ -8,7 +8,9 @@
 #include "access/tupdesc.h"
 #include "utils/rel.h"
 #include "access/htup_details.h"
+#include "storage/lwlock.h"
 
+#define MAX_TERM_SIZE 200
 
 /*
  * Execution state of a foreign scan using postgres_fdw.
@@ -40,5 +42,13 @@ typedef struct OblivScanState
 	Oid			opno;
 
 } OblivScanState;
+
+
+typedef struct STermState{
+    /* mutual exclusion */
+    LWLock lock;
+    int term_size;
+    char term[MAX_TERM_SIZE];
+}STerm;
 
 #endif							/* //OBLIVPG_FDW_H */

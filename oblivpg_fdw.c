@@ -33,14 +33,18 @@
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
+#include "utils/hsearch.h"
 #include "optimizer/pathnode.h"
 #include "optimizer/planmain.h"
 #include "executor/tuptable.h"
 #include "nodes/nodes.h"
 #include "nodes/primnodes.h"
+#include "storage/shmem.h"
+#include "storage/smgr.h"
 #include "optimizer/clauses.h"
 #include "optimizer/restrictinfo.h"
 
+    
 #include <collectc/queue.h>
 
 
@@ -120,10 +124,9 @@ extern void _PG_fini(void);
 PG_FUNCTION_INFO_V1(init_soe);
 PG_FUNCTION_INFO_V1(open_enclave);
 PG_FUNCTION_INFO_V1(close_enclave);
-/* PG_FUNCTION_INFO_V1(init_fsoe); */
 PG_FUNCTION_INFO_V1(load_blocks);
-/* PG_FUNCTION_INFO_V1(transverse_tree); */
-
+PG_FUNCTION_INFO_V1(attach_shmem);
+PG_FUNCTION_INFO_V1(set_nextterm);
 
 /* Default CPU cost to start up a foreign query. */
 #define DEFAULT_FDW_STARTUP_COST	100.0
@@ -139,6 +142,10 @@ PG_FUNCTION_INFO_V1(load_blocks);
 
 int			opmode;
 int			type_op;
+int         queueOid;
+
+//Inter process memory  shared hash
+static STerm *term_state= NULL;
 
 #ifndef UNSAFE
 sgx_enclave_id_t enclave_id = 0;
@@ -230,6 +237,11 @@ static TConfig transverse_tree(Oid indexOID, bool load);
 
 static void load_blocks_heap(Oid heapOid);
 
+static bool init_termstate();
+
+static char* get_nextterm();
+
+static void set_nterm(char*);
 
 Datum
 init_soe(PG_FUNCTION_ARGS)
@@ -257,10 +269,23 @@ init_soe(PG_FUNCTION_ARGS)
 
 	unsigned int attrDescLength;
 	TConfig		config;
+    bool found;
+    char* initialTerm;
+
+#ifdef DUMMYS
+
+    initialTerm = palloc(sizeof(char*)*6);
+    memcpy(initialTerm, "DUMMY",5);
+    initialTerm[10]= '\0';     
+    found = init_termstate();
+    set_nterm(initialTerm);
+    pfree(initialTerm);
+#endif
 
 	type_op = PG_GETARG_UINT32(0);
 	ftw_oid = PG_GETARG_OID(1);
 	opmode = PG_GETARG_UINT32(2);
+
 	/* Test run or deployment */
 	realIndexOid = PG_GETARG_OID(3);
 
@@ -268,6 +293,7 @@ init_soe(PG_FUNCTION_ARGS)
 
 	mappingOid = get_relname_relid(OBLIV_MAPPING_TABLE_NAME, PG_PUBLIC_NAMESPACE);
 
+    
 	if (mappingOid != InvalidOid)
 	{
 
@@ -474,16 +500,17 @@ transverse_tree(Oid indexOID, bool load)
 		BlockNumber par_blkno;
 		OffsetNumber low,
 					high;
+        BTQData     cblock;
 
 		/* target block */
-		BlockNumber tblock;
+		BlockNumber tblock = 0;
 
 		if (load)
 		{
 			tblock = nblocks_level_next;
 		}
 
-		BTQData		cblock = (BTQData) qblock;
+		cblock = (BTQData) qblock;
 
 		blkno = cblock->bts_bn_entry;
 
@@ -636,6 +663,45 @@ load_blocks(PG_FUNCTION_ARGS)
 }
 
 
+Datum
+attach_shmem(PG_FUNCTION_ARGS)
+{
+    bool found;
+    found = init_termstate();
+    PG_RETURN_BOOL(found);
+}
+
+Datum set_nextterm(PG_FUNCTION_ARGS)
+{
+    char* term = PG_GETARG_CSTRING(0);
+    set_nterm(term);
+    PG_RETURN_VOID();
+}
+
+void set_nterm(char* term)
+{
+    LWLockAcquire(&term_state->lock, LW_EXCLUSIVE);
+    memcpy(term_state->term, term, strlen(term)+1);
+    term_state->term_size = strlen(term) + 1;
+    LWLockRelease(&term_state->lock);
+}
+
+char* 
+get_nextterm(){
+    char* term;
+
+    LWLockAcquire(&term_state->lock, LW_EXCLUSIVE);
+    
+    term = palloc(sizeof(char*)*term_state->term_size);
+    memcpy(term, term_state->term, term_state->term_size);
+    memcpy(term_state->term, "DUMMY", sizeof(char)*6);
+    term_state->term[5] = '\0';
+    term_state->term_size=6;
+    LWLockRelease(&term_state->lock);
+  
+    return term;
+}
+
 void
 load_blocks_heap(Oid toid)
 {
@@ -705,6 +771,26 @@ close_enclave(PG_FUNCTION_ARGS)
 
 }
 
+
+bool init_termstate(){
+
+    bool found;
+    
+    LWLockAcquire(AddinShmemInitLock, LW_EXCLUSIVE);
+    term_state = ShmemInitStruct("opterms", sizeof(STerm), &found);
+    
+    if(!found){
+        //First time creating STerms
+        LWLockInitialize(&term_state->lock, LWLockNewTrancheId());
+        term_state->term_size = 0;
+        memset(term_state->term,0, MAX_TERM_SIZE);
+    }
+    LWLockRelease(AddinShmemInitLock);
+    
+    LWLockRegisterTranche(term_state->lock.tranche, "oblivpg_sterms");
+    
+    return found;
+}
 
 /* Functions for updating foreign tables */
 
@@ -947,7 +1033,7 @@ obliviousIterateForeignScan(ForeignScanState *node)
 	int			len;
 	char	   *key;
 	int			rowFound;
-
+   
 	/* int indexedColumn; */
 	OblivScanState *fsstate;
 	TupleTableSlot *tupleSlot;
@@ -956,53 +1042,30 @@ obliviousIterateForeignScan(ForeignScanState *node)
 	tupleSlot = node->ss.ss_ScanTupleSlot;
 
 	/* elog(DEBUG1, "Going to read tuple in function getTuple"); */
-	if (opmode == PRODUCTION_MODE)
-	{
-		key = fsstate->searchValue;
-		len = fsstate->searchValueSize;
-	}
-	else
-	{
+#ifdef DUMMYS
+     key = get_nextterm();
+     len = strlen(key);
+     fsstate->opno = 1054; // for now lets test equals
+     //fsstate->opno = 1061;
+#else
+    key = fsstate->searchValue;
+	len = fsstate->searchValueSize;
+#endif
 
-		/*
-		 * In test mode the key is not used, and the SOE does a sequential
-		 * scan on the heap relation
-		 */
-		key = NULL;
-		len = 0;
-	}
+    
 
-	/* elog(DEBUG1, "Going to search key %s with size %d", key, len); */
-	/**
-	* The real tuple header size is set inside of the enclave on the
-	* HeapTupleData strut in the field t_len;
-	*/
-	if (type_op == DYNAMIC)
-	{
 #ifdef UNSAFE
 		rowFound = getTuple(opmode, fsstate->opno, key, len, (char *) &(fsstate->tuple), sizeof(HeapTupleData), (char *) fsstate->tupleHeader, MAX_TUPLE_SIZE);
 #else
 		getTuple(enclave_id, &rowFound, opmode, fsstate->opno, key, len, (char *) &(fsstate->tuple), sizeof(HeapTupleData), (char *) fsstate->tupleHeader, MAX_TUPLE_SIZE);
 #endif
 
-	}
-	else if (type_op == FOREST)
-	{
-
-#ifdef UNSAFE
-		rowFound = getTupleOST(opmode, fsstate->opno, key, len, (char *) &(fsstate->tuple), sizeof(HeapTupleData), (char *) fsstate->tupleHeader, MAX_TUPLE_SIZE);
-#else
-		getTupleOST(enclave_id, &rowFound, opmode, fsstate->opno, key, len, (char *) &(fsstate->tuple), sizeof(HeapTupleData), (char *) fsstate->tupleHeader, MAX_TUPLE_SIZE);
+#ifdef DUMMYS
+    pfree(key);
 #endif
-	}
-	else
-	{
-		rowFound = -1;
-	}
-
 	fsstate->tuple.t_data = fsstate->tupleHeader;
-
-	if (rowFound == 0)
+	
+    if (rowFound == 0)
 	{
 		ExecStoreTuple(&(fsstate->tuple), tupleSlot, InvalidBuffer, false);
 	}

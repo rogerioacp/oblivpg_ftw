@@ -91,4 +91,6 @@ Ostatus		validateIndexStatus(FdwOblivTableStatus toValidate);
 
 void		setOblivStatusInitated(FdwOblivTableStatus status, Relation mappingRel);
 
+char*       getNextSearchTerm(Oid);
+
 #endif							/* OBLIV_STATUS_H */

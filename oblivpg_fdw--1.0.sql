@@ -35,6 +35,17 @@ RETURNS int4
 AS 'MODULE_PATHNAME', 'close_enclave'
 LANGUAGE C STRICT;
 
+CREATE FUNCTION set_nextterm(cstring)
+RETURNS void
+AS 'MODULE_PATHNAME', 'set_nextterm'
+LANGUAGE C STRICT;
+
+CREATE FUNCTION attach_shmem()
+RETURNS void
+AS 'MODULE_PATHNAME', 'attach_shmem'
+LANGUAGE C STRICT;
+
+
 
 DROP SERVER IF EXISTS obliv;
 DROP FOREIGN TABLE IF EXISTS ftw_users;
