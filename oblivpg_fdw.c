@@ -77,7 +77,7 @@
  * The last part for this hack to work is the table OBLIV_MAPPING_TABLE_NAME that must be created by the user and
  * which will map foreign table Oids to its mirror tables Oids. From this information, the extension can visit the
  * catalog tables to learn the necessary information about the indexes.
- *
+ *indexes
  * To read, write or modify the physical files of a table or an index the extension leverages the internal postgres
  * API. To open a descriptor of the files it is necessary the to have an associated Relation for either the index or the heap file.
  * This relation can be created with the method heap_create on the src/backend/catalog/heap.c file.
@@ -242,6 +242,9 @@ static bool init_termstate();
 static char* get_nextterm();
 
 static void set_nterm(char*);
+
+static void foreignInsert(HeapTuple tuple, Relation rel); 
+static void load_tuples_heap(Oid toid);
 
 Datum
 init_soe(PG_FUNCTION_ARGS)
@@ -649,16 +652,15 @@ load_blocks(PG_FUNCTION_ARGS)
 	/* print_status(); */
 	Oid			ioid = PG_GETARG_OID(0);
 	Oid			toid = PG_GETARG_OID(1);
-
-	/*
-	 * elog(DEBUG1, "Requested to load blocks for index %d and table %d",
-	 * ioid, toid);
-	 */
-	/* print_status(); */
-	/* elog(DEBUG1,"Initializing oblivious tree construction"); */
-	transverse_tree(ioid, true);
-	/* elog(DEBUG1, "Initializing oblivious heap table"); */
-	load_blocks_heap(toid);
+    
+    if(type_op == FOREST){	   	
+        /* elog(DEBUG1,"Initializing oblivious tree construction"); */
+	    transverse_tree(ioid, true);
+	    /* elog(DEBUG1, "Initializing oblivious heap table"); */
+	    load_blocks_heap(toid);
+    }else if (type_op == DYNAMIC){
+        load_tuples_heap(toid);
+    }
 	PG_RETURN_INT32(0);
 }
 
@@ -745,6 +747,28 @@ load_blocks_heap(Oid toid)
 	heap_close(rel, ExclusiveLock);
 }
 
+void
+load_tuples_heap(Oid toid){
+    
+	Snapshot	snapshot;
+	HeapScanDesc scan;
+    Relation    rel;
+    HeapTuple   tuple;
+
+    rel = heap_open(toid, ExclusiveLock);
+    snapshot = RegisterSnapshot(GetLatestSnapshot());
+    scan = heap_beginscan(rel, snapshot, 0, NULL);
+    while((tuple = heap_getnext(scan, ForwardScanDirection))!= NULL){
+        foreignInsert(tuple, rel);
+    }
+
+    heap_endscan(scan);
+    UnregisterSnapshot(snapshot);
+    heap_close(rel, ExclusiveLock);
+
+    
+
+}
 
 Datum
 close_enclave(PG_FUNCTION_ARGS)
@@ -1161,6 +1185,46 @@ getindexColumn(Oid oTable)
 
 
 
+void
+foreignInsert(HeapTuple tuple, Relation rel){
+	
+	TransactionId xid;
+	sgx_status_t status;
+
+	int			indexedColumn;
+	Datum		indexedValueDatum;
+	bool		isColumnNull;
+	char	   *indexValue;
+	int			indexValueSize;
+    CommandId   cid = 0;
+
+	status = SGX_SUCCESS;
+
+    xid = GetCurrentTransactionId();
+
+	/*
+	 * The function heap_prepar_insert is copied from heapam.c as it is a
+	 * private function.
+	 */
+	tuple = heap_prepare_insert(rel, tuple, xid, cid, 0);
+
+	indexedColumn = 1;//getindexColumn(rel->rd_id);
+
+
+	indexedValueDatum = heap_getattr(tuple, indexedColumn, RelationGetDescr(rel), &isColumnNull);
+
+		
+	indexValue = VARDATA_ANY(DatumGetBpCharPP(indexedValueDatum));
+	indexValueSize = bpchartruelen(VARDATA_ANY(DatumGetBpCharPP(indexedValueDatum)), VARSIZE_ANY_EXHDR(DatumGetBpCharPP(indexedValueDatum)));
+    #ifdef UNSAFE
+		insert((char *) tuple->t_data, tuple->t_len, indexValue, indexValueSize);
+    #else
+		insert(enclave_id, (char *) tuple->t_data, tuple->t_len, indexValue, indexValueSize);
+
+    #endif
+
+}
+
 /**
  *  The logic of this function of accessing the relation, tuple and other information to store a tuple was
  *  obtained from the function  ExecInsert in nodeModifyTable.c
@@ -1202,6 +1266,7 @@ obliviousExecForeignInsert(EState *estate,
 	resultRelationDesc = resultRelInfo->ri_RelationDesc;
 	xid = GetCurrentTransactionId();
 
+    elog(DEBUG1, "Command id is %d", estate->es_output_cid);
 	/*
 	 * The function heap_prepar_insert is copied from heapam.c as it is a
 	 * private function.
@@ -1235,7 +1300,7 @@ obliviousExecForeignInsert(EState *estate,
 
 		indexedColumn = getindexColumn(resultRelationDesc->rd_id);
 
-
+        elog(DEBUG1, "current idnexed column is %d", indexedColumn);
 		indexedValueDatum = heap_getattr(tuple, indexedColumn, RelationGetDescr(resultRelationDesc), &isColumnNull);
 
 		/**
