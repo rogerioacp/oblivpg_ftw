@@ -60,7 +60,6 @@ print_status()
 void
 setupOblivStatus(FdwOblivTableStatus instatus, const char *tbName, const char *idName, Oid indexHandlerOID)
 {
-	/* elog(DEBUG1, "setup obliv status"); */
 	status.relTableMirrorId = instatus.relTableMirrorId;
 	status.relIndexMirrorId = instatus.relIndexMirrorId;
 	status.tableRelFileNode = instatus.tableRelFileNode;
@@ -73,18 +72,6 @@ setupOblivStatus(FdwOblivTableStatus instatus, const char *tbName, const char *i
 	indexName = (char *) palloc(strlen(idName) + 1);
 	memcpy(tableName, tbName, strlen(tbName) + 1);
 	memcpy(indexName, idName, strlen(idName) + 1);
-
-	/*
-	 * elog(DEBUG1, "setting obliv status tableName %s to %s", tableName,
-	 * tbName);
-	 */
-
-	/*
-	 * elog(DEBUG1, "setting obliv status indexName %s to %s", indexName,
-	 * idName);
-	 */
-
-
 }
 void
 closeOblivStatus()

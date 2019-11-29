@@ -135,7 +135,7 @@ PG_FUNCTION_INFO_V1(set_nextterm);
 #define DEFAULT_OBLIV_FDW_TOTAL_COST	100.0
 
 /* Predefined max tuple size for sgx to copy the real tuple to*/
-#define MAX_TUPLE_SIZE 300
+#define MAX_TUPLE_SIZE 1400
 
 #define ENCLAVE_LIB "/usr/local/lib/soe/libsoe.signed.so"
 
@@ -276,7 +276,6 @@ init_soe(PG_FUNCTION_ARGS)
     char* initialTerm;
 
 #ifdef DUMMYS
-
     initialTerm = palloc(sizeof(char*)*6);
     memcpy(initialTerm, "DUMMY",5);
     initialTerm[10]= '\0';     
@@ -1043,8 +1042,8 @@ obliviousBeginForeignScan(ForeignScanState *node, int eflags)
 		/* elog(DEBUG1, "initializing fsstate %d", obliv_status); */
 
 		node->fdw_state = (void *) fsstate;
-		fsstate->tupleHeader = (HeapTupleHeader) palloc(MAX_TUPLE_SIZE);
-		memset(fsstate->tupleHeader, 0, MAX_TUPLE_SIZE);
+		fsstate->tupleHeader = (HeapTupleHeader) palloc0(MAX_TUPLE_SIZE);
+		//memset(fsstate->tupleHeader, 0, MAX_TUPLE_SIZE);
 		fsstate->mirrorTable = heap_open(oStatus.relTableMirrorId, AccessShareLock);
 		fsstate->tableTupdesc = RelationGetDescr(fsstate->mirrorTable);
 		heap_close(oblivMappingRel, AccessShareLock);
@@ -1062,7 +1061,7 @@ obliviousIterateForeignScan(ForeignScanState *node)
 	OblivScanState *fsstate;
 	TupleTableSlot *tupleSlot;
 
-	fsstate = (OblivScanState *) node->fdw_state;;
+	fsstate = (OblivScanState *) node->fdw_state;
 	tupleSlot = node->ss.ss_ScanTupleSlot;
 
 	/* elog(DEBUG1, "Going to read tuple in function getTuple"); */
