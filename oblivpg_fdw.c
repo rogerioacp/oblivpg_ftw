@@ -237,14 +237,15 @@ static TConfig transverse_tree(Oid indexOID, bool load);
 
 static void load_blocks_heap(Oid heapOid);
 
-static bool init_termstate();
+static bool init_termstate(void);
 
-static char* get_nextterm();
+static char* get_nextterm(void);
 
-static void set_nterm(char*);
+static void set_nterm(char* term);
 
 static void foreignInsert(HeapTuple tuple, Relation rel); 
 static void load_tuples_heap(Oid toid);
+
 
 Datum
 init_soe(PG_FUNCTION_ARGS)
@@ -272,14 +273,13 @@ init_soe(PG_FUNCTION_ARGS)
 
 	unsigned int attrDescLength;
 	TConfig		config;
-    bool found;
     char* initialTerm;
 
 #ifdef DUMMYS
     initialTerm = palloc(sizeof(char*)*6);
     memcpy(initialTerm, "DUMMY",5);
     initialTerm[10]= '\0';     
-    found = init_termstate();
+    init_termstate();
     set_nterm(initialTerm);
     pfree(initialTerm);
 #endif
@@ -422,7 +422,7 @@ open_enclave(PG_FUNCTION_ARGS)
 
 	if (SGX_SUCCESS != status)
 	{
-		elog(ERROR, "Enclave was not created. Return error %d", status);
+		elog(ERROR, "Enclave was not created. Return error %#x", status);
 		sgx_destroy_enclave(enclave_id);
 		PG_RETURN_INT32(status);
 
@@ -434,6 +434,7 @@ open_enclave(PG_FUNCTION_ARGS)
 	PG_RETURN_INT32(0);
 #endif
 }
+
 
 
 TConfig
@@ -458,7 +459,9 @@ transverse_tree(Oid indexOID, bool load)
 
 
 	irel = index_open(indexOID, ExclusiveLock);
-
+   
+    elog(DEBUG1, "The number of blocks of index is %d",RelationGetNumberOfBlocks(irel));
+	
 
 	queue_stat = queue_new(&queue);
 
@@ -581,7 +584,11 @@ transverse_tree(Oid indexOID, bool load)
 		if (load)
 		{
 			/* Invoke SOE function to store tree block */
-			addIndexBlock(page, BLCKSZ, level_offset, max_height);
+            #ifdef UNSAFE
+			    addIndexBlock(page, BLCKSZ, level_offset, max_height);
+            #else
+                addIndexBlock(enclave_id, page, BLCKSZ, level_offset, max_height);
+            #endif
 		}
 
 		if (P_ISROOT(opaque))
@@ -687,8 +694,7 @@ void set_nterm(char* term)
     LWLockRelease(&term_state->lock);
 }
 
-char* 
-get_nextterm(){
+char* get_nextterm(){
     char* term;
 
     LWLockAcquire(&term_state->lock, LW_EXCLUSIVE);
@@ -717,6 +723,7 @@ load_blocks_heap(Oid toid)
 
 	rel = heap_open(toid, ExclusiveLock);
 	npages = RelationGetNumberOfBlocks(rel);
+    elog(DEBUG1, "The Number of blocks of table is %d", npages);
 	for (blkno = 0; blkno < npages; blkno++)
 	{
 		buffer = ReadBuffer(rel, blkno);
@@ -734,8 +741,12 @@ load_blocks_heap(Oid toid)
 			 */
 			phdr->pd_prune_xid = blkno;
 			/* elog(DEBUG1, "Page special is now %d", phdr->pd_prune_xid); */
-
-			addHeapBlock(page, BLCKSZ, blkno);
+            
+            #ifdef UNSAFE
+			    addHeapBlock(page, BLCKSZ, blkno);
+            #else
+                addHeapBlock(enclave_id, page, BLCKSZ, blkno);
+            #endif
 		}
 		else
 		{
@@ -755,6 +766,8 @@ load_tuples_heap(Oid toid){
     HeapTuple   tuple;
 
     rel = heap_open(toid, ExclusiveLock);
+    elog(DEBUG1, "The Number of blocks of table is %d", RelationGetNumberOfBlocks(rel));
+
     snapshot = RegisterSnapshot(GetLatestSnapshot());
     scan = heap_beginscan(rel, snapshot, 0, NULL);
     while((tuple = heap_getnext(scan, ForwardScanDirection))!= NULL){
@@ -1188,7 +1201,7 @@ void
 foreignInsert(HeapTuple tuple, Relation rel){
 	
 	TransactionId xid;
-	sgx_status_t status;
+	//sgx_status_t status;
 
 	int			indexedColumn;
 	Datum		indexedValueDatum;
@@ -1197,7 +1210,7 @@ foreignInsert(HeapTuple tuple, Relation rel){
 	int			indexValueSize;
     CommandId   cid = 0;
 
-	status = SGX_SUCCESS;
+	//status = SGX_SUCCESS;
 
     xid = GetCurrentTransactionId();
 
