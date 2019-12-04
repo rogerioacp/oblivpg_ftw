@@ -364,6 +364,7 @@ init_soe(PG_FUNCTION_ARGS)
 							  mirrorIndexRelationName,
 							  oStatus.tableNBlocks,
 							  config->fanouts,
+                              config->levels*sizeof(int),
 							  config->levels,
 							  oStatus.relTableMirrorId,
 							  oStatus.relIndexMirrorId,
@@ -374,12 +375,15 @@ init_soe(PG_FUNCTION_ARGS)
 					 mirrorIndexRelationName,
 					 oStatus.tableNBlocks,
 					 config->fanouts,
+                     config->levels*sizeof(int),
 					 config->levels,
 					 oStatus.relTableMirrorId,
 					 oStatus.relIndexMirrorId,
 					 (char *) &attrDesc,
 					 attrDescLength);
+            
 #endif
+        pfree(config);
 		}
 		else
 		{
@@ -601,6 +605,8 @@ transverse_tree(Oid indexOID, bool load)
 
 			if (!load)
 			{
+
+                elog(DEBUG1, "Fanout of height %d is %d\n", 0, nblocks_level_next);
 				result->fanouts[0] = nblocks_level;
 			}
 
@@ -619,6 +625,7 @@ transverse_tree(Oid indexOID, bool load)
 						{
 							result->fanouts = (int *) realloc(result->fanouts, sizeof(int) * cb_height);
 						}
+                        elog(DEBUG1, "Fanout of height %d is %d\n", cb_height, nblocks_level_next);
 						result->fanouts[cb_height] = nblocks_level_next;
 					}
 				}
@@ -646,6 +653,7 @@ transverse_tree(Oid indexOID, bool load)
 	index_close(irel, ExclusiveLock);
 	if (!load)
 	{
+        elog(DEBUG1, "Tree height is %d\n", max_height-1);
 		result->levels = max_height - 1;
 	}
 	return result;
@@ -660,9 +668,9 @@ load_blocks(PG_FUNCTION_ARGS)
 	Oid			toid = PG_GETARG_OID(1);
     
     if(type_op == FOREST){	   	
-        /* elog(DEBUG1,"Initializing oblivious tree construction"); */
+        elog(DEBUG1,"Initializing oblivious tree construction"); 
 	    transverse_tree(ioid, true);
-	    /* elog(DEBUG1, "Initializing oblivious heap table"); */
+	    elog(DEBUG1, "Initializing oblivious heap table");
 	    load_blocks_heap(toid);
     }else if (type_op == DYNAMIC){
         load_tuples_heap(toid);
@@ -734,7 +742,7 @@ load_blocks_heap(Oid toid)
 
 			/* ps_size = PageGetSpecialSize(page); */
 			/* elog(DEBUG1, "Page special size is %d", phdr->pd_prune_xid); */
-
+            //elog(DEBUG1, "Loading page %d",blkno);
 			/*
 			 * storing on blkno on page header as it is not used by postgres
 			 * engine.
