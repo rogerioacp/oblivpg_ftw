@@ -528,7 +528,7 @@ transverse_tree(Oid indexOID, bool load)
 		{
 			bufp = ReadBuffer(irel, cblock->bts_bn_entry);
 		}
-
+       // elog(DEBUG1, "WTF?");
 		page = BufferGetPage(bufp);
 		opaque = (BTPageOpaque) PageGetSpecialPointer(page);
 		blkno = BufferGetBlockNumber(bufp);
@@ -556,7 +556,7 @@ transverse_tree(Oid indexOID, bool load)
 		offnum = low;
 		if (!P_ISLEAF(opaque))
 		{
-			while (offnum <= high)
+           	while (offnum <= high)
 			{
 				/*
 				 * push elements to the stack  to be transversed on the next
@@ -567,7 +567,6 @@ transverse_tree(Oid indexOID, bool load)
 				itemid = PageGetItemId(page, offnum);
 				itup = (IndexTuple) PageGetItem(page, itemid);
 				blkno = BTreeInnerTupleGetDownLink(itup);
-
 				cq_data = (BTQData) palloc(sizeof(BTQueueData));
 				cq_data->bts_offnum = offnum;
 				cq_data->bts_bn_entry = blkno;
@@ -725,31 +724,30 @@ load_blocks_heap(Oid toid)
 	BlockNumber blkno;
 	Buffer		buffer;
 	Page		page;
-
-	/* uint16 ps_size; */
-	PageHeader	phdr;
+    int*        r_blkno;
 
 	rel = heap_open(toid, ExclusiveLock);
 	npages = RelationGetNumberOfBlocks(rel);
+      
     elog(DEBUG1, "The Number of blocks of table is %d", npages);
+
 	for (blkno = 0; blkno < npages; blkno++)
 	{
 		buffer = ReadBuffer(rel, blkno);
 		if (BufferIsValid(buffer))
 		{
 			page = BufferGetPage(buffer);
-			phdr = (PageHeader) page;
 
-			/* ps_size = PageGetSpecialSize(page); */
-			/* elog(DEBUG1, "Page special size is %d", phdr->pd_prune_xid); */
-            //elog(DEBUG1, "Loading page %d",blkno);
-			/*
-			 * storing on blkno on page header as it is not used by postgres
-			 * engine.
-			 */
-			phdr->pd_prune_xid = blkno;
-			/* elog(DEBUG1, "Page special is now %d", phdr->pd_prune_xid); */
-            
+		    /**
+             * Assumes that heap blocks of the original table are
+             * initiated with a special area for an integer.
+             */
+            if(page == PageGetSpecialPointer(page)){
+                elog(ERROR, "Page has no allocated space for special area");
+            }
+            r_blkno = (int*) PageGetSpecialPointer(page);
+            *r_blkno = blkno;
+
             #ifdef UNSAFE
 			    addHeapBlock(page, BLCKSZ, blkno);
             #else

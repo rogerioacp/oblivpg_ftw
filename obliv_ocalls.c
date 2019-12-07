@@ -70,7 +70,7 @@ setupOblivStatus(FdwOblivTableStatus instatus, const char *tbName, const char *i
 	ihOID = indexHandlerOID;
 	tableName = (char *) palloc(strlen(tbName) + 1);
 	indexName = (char *) palloc(strlen(idName) + 1);
-	memcpy(tableName, tbName, strlen(tbName) + 1);
+    memcpy(tableName, tbName, strlen(tbName) + 1);
 	memcpy(indexName, idName, strlen(idName) + 1);
 }
 void
@@ -104,18 +104,11 @@ initIndex(const char *filename, const char *pages, unsigned int nblocks, unsigne
 	Buffer		buffer = 0;
 	Page		page = NULL;
 
-	/*
-	 * elog(DEBUG1, "Requested to init index  %s for tableName %s and index
-	 * name %s", filename, tableName, indexName);
-	 */
-	/* BlockNumber blkno; */
-	/* SoeHashPageOpaque oopaque; */
 
-	/*
-	 * elog(DEBUG1, "Initializing oblivious hash index file for relation %s,
-	 * index OID %u, with a total of %u blocks  of size %u bytes", filename,
-	 * status.relIndexMirrorId, nblocks, blockSize);
-	 */
+    elog(DEBUG1, "Requested to init index  %s for tableName %s and index  name %s", filename, tableName, indexName);
+
+	
+   // elog(DEBUG1, "Initializing oblivious hash index file for relation %s,  index OID %u, with a total of %u blocks  of size %u bytes", filename, status.relIndexMirrorId, nblocks, blockSize);
 
 	if (status.relIndexMirrorId != InvalidOid)
 	{
@@ -223,18 +216,8 @@ initRelation(const char *filename, const char *pages, unsigned int nblocks, unsi
 	int			offset = 0;
 	Page		page = NULL;
 
-	/*
-	 * elog(DEBUG1, "Requested to init relation  %s for tableName %s and index
-	 * name %s", filename, tableName, indexName);
-	 */
-
-	/*
-	 * elog(DEBUG1, "Initializing oblivious file for relation %s, heap OID %u,
-	 * with a total of %u blocks  of size %u bytes", filename,
-	 * status.relTableMirrorId, nblocks, blockSize);
-	 */
-
-	if (status.relTableMirrorId != InvalidOid)
+   	
+    if (status.relTableMirrorId != InvalidOid)
 	{
 
 		rel = heap_open(status.relTableMirrorId, ExclusiveLock);
@@ -343,11 +326,6 @@ outFileRead(char *page, const char *filename, int blkno, int pageSize)
 	bool		isIndex;
 	Oid			targetTable;
 
-	/* OblivPageOpaque oopaque; */
-	/* SoeHashPageOpaque oopaque; */
-
-	/* elog(DEBUG1, "out file read %d of page size %d", blkno, pageSize); */
-
 	if (strcmp(filename, tableName) == 0)
 	{
 		isIndex = false;
@@ -372,7 +350,6 @@ outFileRead(char *page, const char *filename, int blkno, int pageSize)
 
 		if (isIndex)
 		{
-			/* elog(DEBUG1, "Going to open index relation"); */
 			rel = index_open(targetTable, RowExclusiveLock);
 		}
 		else
@@ -390,22 +367,16 @@ outFileRead(char *page, const char *filename, int blkno, int pageSize)
 		buffer = ReadBuffer(rel, blkno);
 		heapPage = BufferGetPage(buffer);
 
-		/*
-		 * if(PageGetPageSize(heapPage) != pageSize){ ereport(ERROR,
-		 * (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("Page sizes do not match
-		 * %zu, %d", PageGetPageSize(heapPage), pageSize)));
-		 *
-		 * }
-		 */
+		if(PageGetPageSize(heapPage) != pageSize){ 
+            ereport(ERROR, (errcode(ERRCODE_UNDEFINED_OBJECT), 
+                            errmsg("Page sizes do not match %zu, %d", PageGetPageSize(heapPage), 
+                                   pageSize)));
+        }
+
 
 		memcpy(page, heapPage, pageSize);
 
-		/* oopaque = (SoeHashPageOpaque) PageGetSpecialPointer(heapPage); */
 
-		/*
-		 * elog(DEBUG1, "Read block number %d which has real block %d with
-		 * flag %d", blkno,oopaque->o_blkno, oopaque->hasho_flag);
-		 */
 		ReleaseBuffer(buffer);
 
 		if (isIndex)
@@ -447,22 +418,12 @@ outFileWrite(const char *page, const char *filename, int blkno, int pageSize)
 	bool		isIndex;
 	Oid			targetTable;
 
-	/* OblivPageOpaque oopaque; */
-	/* OblivPageOpaque oopaqueOriginal; */
 
 	buffer = 0;
 
-	/* elog(DEBUG1, "out file write %d of pageSize %d", blkno, pageSize); */
-
-	/* oopaqueOriginal = (OblivPageOpaque) PageGetSpecialPointer(page); */
-	/* elog(DEBUG1, "Original block has blkno %d", oopaqueOriginal->o_blkno); */
-
-	/*
-	 * elog(DEBUG1, "Requested to write to filename %s for tableName %s and
-	 * index name %s", filename, tableName, indexName);
-	 */
 	if (strcmp(filename, tableName) == 0)
-	{
+    {
+	
 		isIndex = false;
 		targetTable = status.relTableMirrorId;
 
@@ -486,7 +447,6 @@ outFileWrite(const char *page, const char *filename, int blkno, int pageSize)
 
 		if (isIndex)
 		{
-			/* elog(DEBUG1, "Going to open index"); */
 			rel = index_open(targetTable, RowExclusiveLock);
 		}
 		else
@@ -505,23 +465,17 @@ outFileWrite(const char *page, const char *filename, int blkno, int pageSize)
          **/
 		heapPage = BufferGetPage(buffer);
 
-		/*
-		 * if(PageGetPageSize(heapPage) != pageSize){ ereport(ERROR,
-		 * (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("Page sizes do not match
-		 * %zu, %d", PageGetPageSize(heapPage), pageSize)));
-		 *
-		 * }
-		 */
-
+		 if(PageGetPageSize(heapPage) != pageSize){ 
+             ereport(ERROR, 
+                     (errcode(ERRCODE_UNDEFINED_OBJECT), 
+                      errmsg("Page sizes do not match %zu, %d", 
+                             PageGetPageSize(heapPage), pageSize))); 
+         }
+		 
+	  
 		memcpy(heapPage, page, pageSize);
 
-		/* oopaque = (OblivPageOpaque) PageGetSpecialPointer(heapPage); */
-
-		/*
-		 * elog(DEBUG1, "Write block number %d which has real block %d",
-		 * blkno, oopaque->o_blkno);
-		 */
-
+	
 		MarkBufferDirty(buffer);
 		ReleaseBuffer(buffer);
 
