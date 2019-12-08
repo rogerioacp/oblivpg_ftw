@@ -726,7 +726,7 @@ load_blocks_heap(Oid toid)
 	Page		page;
     int*        r_blkno;
 
-	rel = heap_open(toid, ExclusiveLock);
+	rel = heap_open(toid, NoLock);
 	npages = RelationGetNumberOfBlocks(rel);
       
     elog(DEBUG1, "The Number of blocks of table is %d", npages);
@@ -760,7 +760,7 @@ load_blocks_heap(Oid toid)
 		}
 		ReleaseBuffer(buffer);
 	}
-	heap_close(rel, ExclusiveLock);
+	heap_close(rel, NoLock);
 }
 
 void

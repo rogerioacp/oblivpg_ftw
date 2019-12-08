@@ -40,8 +40,8 @@ typedef SoeHashPageOpaqueData * SoeHashPageOpaque;
 #define SOE_CONTEXT "SOE_CONTEXT"
 
 FdwOblivTableStatus status;
-char	   *tableName;
-char	   *indexName;
+char	   *tableName = "mirror_usertable";
+char	   *indexName = "mirror_usertable_key";
 Oid			ihOID;
 
 void
@@ -68,10 +68,10 @@ setupOblivStatus(FdwOblivTableStatus instatus, const char *tbName, const char *i
 	status.tableNBlocks = instatus.tableNBlocks;
 
 	ihOID = indexHandlerOID;
-	tableName = (char *) palloc(strlen(tbName) + 1);
-	indexName = (char *) palloc(strlen(idName) + 1);
-    memcpy(tableName, tbName, strlen(tbName) + 1);
-	memcpy(indexName, idName, strlen(idName) + 1);
+	//tableName = (char *) palloc(strlen(tbName) + 1);
+	//indexName = (char *) palloc(strlen(idName) + 1);
+    //memcpy(tableName, tbName, strlen(tbName) + 1);
+	//memcpy(indexName, idName, strlen(idName) + 1);
 }
 void
 closeOblivStatus()
@@ -105,10 +105,8 @@ initIndex(const char *filename, const char *pages, unsigned int nblocks, unsigne
 	Page		page = NULL;
 
 
-    elog(DEBUG1, "Requested to init index  %s for tableName %s and index  name %s", filename, tableName, indexName);
+    //elog(DEBUG1, "Requested to init index  %s for tableName %s and index  name %s", filename, tableName, indexName);
 
-	
-   // elog(DEBUG1, "Initializing oblivious hash index file for relation %s,  index OID %u, with a total of %u blocks  of size %u bytes", filename, status.relIndexMirrorId, nblocks, blockSize);
 
 	if (status.relIndexMirrorId != InvalidOid)
 	{
@@ -126,7 +124,6 @@ initIndex(const char *filename, const char *pages, unsigned int nblocks, unsigne
 	         **/
 			if (ihOID == F_HASHHANDLER && (initOffset + offset) < 4)
 			{
-				elog(DEBUG1, "Initiating speacial hash pages %d ", offset);
 				buffer = ReadBuffer(rel, offset);
 			}
 			else if (ihOID == F_BTHANDLER && (initOffset + offset) == 0)
@@ -150,18 +147,8 @@ initIndex(const char *filename, const char *pages, unsigned int nblocks, unsigne
 	         **/
 
 			page = BufferGetPage(buffer);
-			/* oopaque = (SoeHashPageOpaque) PageGetSpecialPointer(page); */
 
 			memcpy(page, pages + (offset * BLCKSZ), blockSize);
-
-			/*
-			 * if(PageGetPageSize(page) != blockSize){ ereport(ERROR,
-			 * (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("Page sizes does not
-			 * match %zu", PageGetPageSize(page))));
-			 *
-			 * }
-			 */
-
 
 			/*
 			 * We mark all the new buffers dirty, but do nothing to write them
@@ -215,7 +202,8 @@ initRelation(const char *filename, const char *pages, unsigned int nblocks, unsi
 	Buffer		buffer = 0;
 	int			offset = 0;
 	Page		page = NULL;
-
+   
+    //elog(DEBUG1, "Initializing heap relation %s with nblocks %d of size %d", filename, nblocks, blockSize);
    	
     if (status.relTableMirrorId != InvalidOid)
 	{
@@ -234,17 +222,11 @@ initRelation(const char *filename, const char *pages, unsigned int nblocks, unsi
              **/
 
 			page = BufferGetPage(buffer);
+            if(!PageIsVerified(pages + (offset * BLCKSZ), BufferGetBlockNumber(buffer))){
+                elog(ERROR, "Page is not verified when init relation. block %d", offset);
+            };
 
-			memcpy(page, pages + (offset * BLCKSZ), blockSize);
-
-			/*
-			 * if(PageGetPageSize(page) != blockSize){ ereport(ERROR,
-			 * (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("Page sizes does not
-			 * match %zu", PageGetPageSize(page))));
-			 *
-			 * }
-			 */
-
+            memcpy(page, (pages + (offset * BLCKSZ)), blockSize);
 
 			/*
 			 * We mark all the new buffers dirty, but do nothing to write them
@@ -319,14 +301,15 @@ sgx_status_t
 #endif
 outFileRead(char *page, const char *filename, int blkno, int pageSize)
 {
-
 	Relation	rel;
 	Buffer		buffer;
 	Page		heapPage;
 	bool		isIndex;
 	Oid			targetTable;
 
-	if (strcmp(filename, tableName) == 0)
+    //elog(DEBUG1, "outFileRead relation %s blocknum %d and size %d", filename, blkno, pageSize);
+	
+    if (strcmp(filename, tableName) == 0)
 	{
 		isIndex = false;
 		targetTable = status.relTableMirrorId;
@@ -366,13 +349,6 @@ outFileRead(char *page, const char *filename, int blkno, int pageSize)
         **/
 		buffer = ReadBuffer(rel, blkno);
 		heapPage = BufferGetPage(buffer);
-
-		if(PageGetPageSize(heapPage) != pageSize){ 
-            ereport(ERROR, (errcode(ERRCODE_UNDEFINED_OBJECT), 
-                            errmsg("Page sizes do not match %zu, %d", PageGetPageSize(heapPage), 
-                                   pageSize)));
-        }
-
 
 		memcpy(page, heapPage, pageSize);
 
@@ -417,7 +393,8 @@ outFileWrite(const char *page, const char *filename, int blkno, int pageSize)
 	Buffer		buffer;
 	bool		isIndex;
 	Oid			targetTable;
-
+  
+    //elog(DEBUG1, "outFileWrite relation %s blocknum %d and size %d", filename, blkno, pageSize);
 
 	buffer = 0;
 
@@ -465,17 +442,8 @@ outFileWrite(const char *page, const char *filename, int blkno, int pageSize)
          **/
 		heapPage = BufferGetPage(buffer);
 
-		 if(PageGetPageSize(heapPage) != pageSize){ 
-             ereport(ERROR, 
-                     (errcode(ERRCODE_UNDEFINED_OBJECT), 
-                      errmsg("Page sizes do not match %zu, %d", 
-                             PageGetPageSize(heapPage), pageSize))); 
-         }
-		 
-	  
-		memcpy(heapPage, page, pageSize);
+        memcpy(heapPage, page, pageSize);
 
-	
 		MarkBufferDirty(buffer);
 		ReleaseBuffer(buffer);
 
