@@ -358,6 +358,9 @@ init_soe(PG_FUNCTION_ARGS)
 		else if (type_op == FOREST)
 		{
 			config = transverse_tree(realIndexOid, false);
+
+            elog(DEBUG1, "Initializing FSOE for table with %d bocks", oStatus.tableNBlocks);
+
 #ifndef UNSAFE
 			status = initFSOE(enclave_id,
 							  mirrorTableRelationName,
