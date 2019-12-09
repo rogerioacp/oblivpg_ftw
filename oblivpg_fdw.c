@@ -669,14 +669,14 @@ load_blocks(PG_FUNCTION_ARGS)
 	Oid			ioid = PG_GETARG_OID(0);
 	Oid			toid = PG_GETARG_OID(1);
     
-    if(type_op == FOREST){	   	
+   // if(type_op == FOREST){	   	
         elog(DEBUG1,"Initializing oblivious tree construction"); 
 	    transverse_tree(ioid, true);
 	    elog(DEBUG1, "Initializing oblivious heap table");
 	    load_blocks_heap(toid);
-    }else if (type_op == DYNAMIC){
+    /*}else if (type_op == DYNAMIC){
         load_tuples_heap(toid);
-    }
+    }*/
 	PG_RETURN_INT32(0);
 }
 
