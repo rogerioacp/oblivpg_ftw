@@ -327,6 +327,8 @@ init_soe(PG_FUNCTION_ARGS)
 
 		elog(DEBUG1, "Initializing SOE");
 
+		config = transverse_tree(realIndexOid, false);
+
 		if (type_op == DYNAMIC)
 		{
 			hashFunctionOID = mirrorIndexTable->rd_support[0];
@@ -335,6 +337,9 @@ init_soe(PG_FUNCTION_ARGS)
 							 mirrorTableRelationName,
 							 mirrorIndexRelationName,
 							 oStatus.tableNBlocks,
+                             config->fanouts,
+                             config->levels*sizeof(int),
+                             config->levels,
 							 oStatus.indexNBlocks,
 							 oStatus.relTableMirrorId,
 							 oStatus.relIndexMirrorId,
@@ -346,6 +351,9 @@ init_soe(PG_FUNCTION_ARGS)
 			initSOE(mirrorTableRelationName,
 					mirrorIndexRelationName,
 					oStatus.tableNBlocks,
+                    config->fanouts,
+                    config->levels*sizeof(int),
+                    config->levels,
 					oStatus.indexNBlocks,
 					oStatus.relTableMirrorId,
 					oStatus.relIndexMirrorId,
@@ -357,8 +365,6 @@ init_soe(PG_FUNCTION_ARGS)
 		}
 		else if (type_op == FOREST)
 		{
-			config = transverse_tree(realIndexOid, false);
-
             elog(DEBUG1, "Initializing FSOE for table with %d bocks", oStatus.tableNBlocks);
 
 #ifndef UNSAFE
@@ -483,7 +489,7 @@ transverse_tree(Oid indexOID, bool load)
 	/* The three has not been created and does not have a root */
 	/* if(!BufferIsValid(*bufp)) */
 	/**/
-
+    //elog(DEBUG1, "Root is block number %d",BufferGetBlockNumber(bufp));
 
 	queue_data = (BTQData) palloc(sizeof(BTQueueData));
 	queue_data->bts_parent_blkno = InvalidBlockNumber;
@@ -589,7 +595,8 @@ transverse_tree(Oid indexOID, bool load)
 
 		if (load)
 		{
-			/* Invoke SOE function to store tree block */
+			//elog(DEBUG1, "Loading block %d at level %d", level_offset, max_height);
+            /* Invoke SOE function to store tree block */
             #ifdef UNSAFE
 			    addIndexBlock(page, BLCKSZ, level_offset, max_height);
             #else
@@ -608,7 +615,7 @@ transverse_tree(Oid indexOID, bool load)
 			if (!load)
 			{
 
-                elog(DEBUG1, "Fanout of height %d is %d\n", 0, nblocks_level_next);
+                elog(DEBUG1, "Fanout of height %d is %d\n", 0, nblocks_level);
 				result->fanouts[0] = nblocks_level;
 			}
 
@@ -665,18 +672,16 @@ transverse_tree(Oid indexOID, bool load)
 Datum
 load_blocks(PG_FUNCTION_ARGS)
 {
-	/* print_status(); */
 	Oid			ioid = PG_GETARG_OID(0);
 	Oid			toid = PG_GETARG_OID(1);
     
-   // if(type_op == FOREST){	   	
-        elog(DEBUG1,"Initializing oblivious tree construction"); 
-	    transverse_tree(ioid, true);
-	    elog(DEBUG1, "Initializing oblivious heap table");
-	    load_blocks_heap(toid);
-    /*}else if (type_op == DYNAMIC){
-        load_tuples_heap(toid);
-    }*/
+  
+    elog(DEBUG1,"Initializing oblivious tree construction"); 
+    transverse_tree(ioid, true);
+    
+    elog(DEBUG1, "Initializing oblivious heap table");
+	load_blocks_heap(toid);
+ 
 	PG_RETURN_INT32(0);
 }
 
@@ -735,7 +740,11 @@ load_blocks_heap(Oid toid)
     elog(DEBUG1, "The Number of blocks of table is %d", npages);
 
 	for (blkno = 0; blkno < npages; blkno++)
-	{
+	{   
+        if(blkno%50000 == 0){
+            elog(DEBUG1, "Loading Heap Block %d", blkno);
+        }
+
 		buffer = ReadBuffer(rel, blkno);
 		if (BufferIsValid(buffer))
 		{
@@ -750,7 +759,6 @@ load_blocks_heap(Oid toid)
             }
             r_blkno = (int*) PageGetSpecialPointer(page);
             *r_blkno = blkno;
-
             #ifdef UNSAFE
 			    addHeapBlock(page, BLCKSZ, blkno);
             #else
@@ -795,6 +803,7 @@ Datum
 close_enclave(PG_FUNCTION_ARGS)
 {
 
+    int result;
 #ifndef UNSAFE
 	sgx_status_t status;
 
@@ -811,8 +820,8 @@ close_enclave(PG_FUNCTION_ARGS)
 	closeSoe();
 	PG_RETURN_INT32(0);
 #endif
-	closeOblivStatus();
-	elog(DEBUG1, "Enclave destroyed");
+	//closeOblivStatus();
+	//elog(DEBUG1, "Enclave destroyed");
 
 }
 
