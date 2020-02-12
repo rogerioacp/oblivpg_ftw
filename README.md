@@ -4,8 +4,7 @@
 
 - Define the environment variable to link the generated library with the SGX libs on the untrusted side.
 
-	- The following example compiles the library to run the enclave in simulation mode.
-	Use different flags to run in the hardware.
+- The following example compiles the library to run the enclave in simulation mode. Use different flags to run in the hardware.
 
 ```bash 
 
@@ -30,12 +29,27 @@ export SGX_LIB="-L/opt/intel/sgxsdk/lib64 -lsgx_urts_sim -lpthread -lsgx_uae_ser
 
 ```
 
-The library compilation process has two configuration flags:
+The library compilation process has the following configuration flags:
 
 -  UNSAFE (1,0) - When set to 1 the library will issue enclave calls, otherwise it will use the SOE API without the enclave.
 - ORAM_LIB:
    - PATHORAM - Link the library with the Path ORAM library.
    - FORESTORAM - Link the library with the Forest ORAM library.
+
+
+- An additinional preprocessing directiong can also be passed duriing the
+  compilation phase of the source code. The flag -DDUMMYS sets triggers the
+  query stream between the client and server by reading a query search
+  parameters from shared Memory. These parameters can be set by the client with
+  the set_nterm function.
+
+
+- Compile the library with the -DDUMMYS option.
+
+```bash
+
+ make CFLAGS="-DDUMMYS -Wall -Wmissing-prototypes -Wpointer-arith -Wdeclaration-after-statement -Wendif-labels -Wmissing-format-attribute -Wformat-security -fno-strict-aliasing -fwrapv -fexcess-precision=standard -g -O0 -fPIC -I. -I./ -I/usr/local/pgsql/include/server -I/usr/local/pgsql/include/internal -I/usr/local/include/soe -I/opt/intel/sgxsdk/include" ORAM_LIB=(PATHORAM or FORESTORAM)
+```
 
 - Install the library.
 
