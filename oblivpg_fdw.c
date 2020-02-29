@@ -135,7 +135,7 @@ PG_FUNCTION_INFO_V1(set_nextterm);
 #define DEFAULT_OBLIV_FDW_TOTAL_COST	100.0
 
 /* Predefined max tuple size for sgx to copy the real tuple to*/
-#define MAX_TUPLE_SIZE 1400
+#define MAX_TUPLE_SIZE 8070
 
 #define ENCLAVE_LIB "/usr/local/lib/soe/libsoe.signed.so"
 
@@ -540,6 +540,11 @@ transverse_tree(Oid indexOID, bool load)
        // elog(DEBUG1, "WTF?");
 		page = BufferGetPage(bufp);
 		opaque = (BTPageOpaque) PageGetSpecialPointer(page);
+        elog(DEBUG1, "page opaque has size %lu\n", sizeof(BTPageOpaqueData));
+        //opaque->lsize=0;
+        opaque->location[0] = 0;
+        opaque->location[1] = 0;
+        //elog(DEBUG1, "page has size %d and location %d %d", opaque->location[0], opaque->location[1]);
 		blkno = BufferGetBlockNumber(bufp);
 		low = P_FIRSTDATAKEY(opaque);
 		high = PageGetMaxOffsetNumber(page);
