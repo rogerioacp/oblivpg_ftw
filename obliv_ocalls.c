@@ -299,13 +299,16 @@ void
 #else
 sgx_status_t
 #endif
-outFileRead(char *page, const char *filename, int blkno, int pageSize)
+outFileRead(const char *filename, const char *pages, int pagesSize, int  *blknos, int posSize)
 {
 	Relation	rel;
 	Buffer		buffer;
 	Page		heapPage;
 	bool		isIndex;
 	Oid			targetTable;
+    char*       page;
+    int         offset, blkno = 0;
+    int         nblocks = posSize / sizeof(int);
 
     //elog(DEBUG1, "outFileRead relation %s blocknum %d and size %d", filename, blkno, pageSize);
 	
@@ -330,7 +333,8 @@ outFileRead(char *page, const char *filename, int blkno, int pageSize)
 
 	if (targetTable != InvalidOid)
 	{
-
+        
+    
 		if (isIndex)
 		{
 			rel = index_open(targetTable, RowExclusiveLock);
@@ -339,21 +343,26 @@ outFileRead(char *page, const char *filename, int blkno, int pageSize)
 		{
 			rel = heap_open(targetTable, RowExclusiveLock);
 		}
+        
+        for(offset=0; offset < nblocks; offset++){
+            blkno = blknos[offset];
+            page = (char*) &pages[offset*BLCKSZ];
 
-		/**
-        * Buffers are not being locked as this extension is not
-        * considering concurrent accesses to the
-        * relations. It might raise some unexpected errors if the
-        * postgres implementation checks if buffers
-        * have pins or locks associated.
-        **/
-		buffer = ReadBuffer(rel, blkno);
-		heapPage = BufferGetPage(buffer);
+			/**
+	        * Buffers are not being locked as this extension is not
+	        * considering concurrent accesses to the
+	        * relations. It might raise some unexpected errors if the
+	        * postgres implementation checks if buffers
+	        * have pins or locks associated.
+	        **/
+			buffer = ReadBuffer(rel, blkno);
+			heapPage = BufferGetPage(buffer);
 
-		memcpy(page, heapPage, pageSize);
+			memcpy(page, heapPage, BLCKSZ);
 
 
-		ReleaseBuffer(buffer);
+			ReleaseBuffer(buffer);
+	    }
 
 		if (isIndex)
 		{
@@ -363,8 +372,6 @@ outFileRead(char *page, const char *filename, int blkno, int pageSize)
 		{
 			heap_close(rel, RowExclusiveLock);
 		}
-
-
 	}
 	else
 	{
@@ -385,7 +392,7 @@ void
 #else
 sgx_status_t
 #endif
-outFileWrite(const char *page, const char *filename, int blkno, int pageSize)
+outFileWrite(const char *filename, const char *pages, int pagesSize, int *blknos, int posSize)
 {
 
 	Relation	rel;
@@ -393,7 +400,9 @@ outFileWrite(const char *page, const char *filename, int blkno, int pageSize)
 	Buffer		buffer;
 	bool		isIndex;
 	Oid			targetTable;
-  
+    char        *page;
+    int         offset, blkno = 0;
+    int         nblocks = posSize / sizeof(int); 
     //elog(DEBUG1, "outFileWrite relation %s blocknum %d and size %d", filename, blkno, pageSize);
 
 	buffer = 0;
@@ -431,21 +440,25 @@ outFileWrite(const char *page, const char *filename, int blkno, int pageSize)
 			rel = heap_open(targetTable, RowExclusiveLock);
 		}
 
-		buffer = ReadBuffer(rel, blkno);
+        for(offset = 0; offset < nblocks; offset++){
+        	blkno = blknos[offset];
+        	page = (char*) &pages[offset*BLCKSZ];
 
-		/**
-         * Buffers are not being locked as this extension is not
-         * considering concurrent accesses to the
-         * relations. It might raise some unexpected errors if the
-         * postgres implementation checks if buffers
-         * have pins or locks associated.
-         **/
-		heapPage = BufferGetPage(buffer);
+			buffer = ReadBuffer(rel, blkno);
+			/**
+	         * Buffers are not being locked as this extension is not
+	         * considering concurrent accesses to the
+	         * relations. It might raise some unexpected errors if the
+	         * postgres implementation checks if buffers
+	         * have pins or locks associated.
+	         **/
+			heapPage = BufferGetPage(buffer);
 
-        memcpy(heapPage, page, pageSize);
+	        memcpy(heapPage, page, BLCKSZ);
 
-		MarkBufferDirty(buffer);
-		ReleaseBuffer(buffer);
+			MarkBufferDirty(buffer);
+			ReleaseBuffer(buffer);
+        }
 
 		if (isIndex)
 		{
