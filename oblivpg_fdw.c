@@ -708,23 +708,23 @@ Datum set_nextterm(PG_FUNCTION_ARGS)
 
 void set_nterm(char* term)
 {
-    LWLockAcquire(&term_state->lock, LW_EXCLUSIVE);
+    //LWLockAcquire(&term_state->lock, LW_EXCLUSIVE);
     memcpy(term_state->term, term, strlen(term)+1);
     term_state->term_size = strlen(term) + 1;
-    LWLockRelease(&term_state->lock);
+    //LWLockRelease(&term_state->lock);
 }
 
 char* get_nextterm(){
     char* term;
 
-    LWLockAcquire(&term_state->lock, LW_EXCLUSIVE);
+    //LWLockAcquire(&term_state->lock, LW_EXCLUSIVE);
     
     term = palloc(sizeof(char*)*term_state->term_size);
     memcpy(term, term_state->term, term_state->term_size);
     memcpy(term_state->term, "DUMMY", sizeof(char)*6);
     term_state->term[5] = '\0';
     term_state->term_size=6;
-    LWLockRelease(&term_state->lock);
+    //LWLockRelease(&term_state->lock);
   
     return term;
 }
@@ -746,7 +746,7 @@ load_blocks_heap(Oid toid)
 
 	for (blkno = 0; blkno < npages; blkno++)
 	{   
-        if(blkno%50000 == 0){
+        if(blkno%500 == 0){
             elog(DEBUG1, "Loading Heap Block %d", blkno);
         }
 
@@ -776,6 +776,7 @@ load_blocks_heap(Oid toid)
 		}
 		ReleaseBuffer(buffer);
 	}
+
 	heap_close(rel, NoLock);
 }
 
